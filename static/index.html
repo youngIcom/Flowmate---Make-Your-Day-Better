@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="FlowMate — Asisten penjadwalan berempati yang melindungi energi dan kesehatan mentalmu.">
+    <title>FlowMate — Empathic AI Scheduler</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js'></script>
+</head>
+<body>
+    <!-- ===================== SIDEBAR NAV ===================== -->
+    <nav id="sidebar">
+        <div class="sidebar-logo">
+            <span class="logo-icon">🌊</span>
+            <span class="logo-text">FlowMate</span>
+        </div>
+        <ul class="nav-links">
+            <li>
+                <button class="nav-btn active" data-page="home" id="nav-home">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                    <span>Home</span>
+                </button>
+            </li>
+            <li>
+                <button class="nav-btn" data-page="checkin" id="nav-checkin">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    <span>Check-in</span>
+                </button>
+            </li>
+            <li>
+                <button class="nav-btn" data-page="journal" id="nav-journal">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                    <span>Journal</span>
+                </button>
+            </li>
+            <li>
+                <button class="nav-btn" data-page="dashboard" id="nav-dashboard">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
+                    <span>Dashboard</span>
+                </button>
+            </li>
+        </ul>
+        <div class="sidebar-footer">
+            <div class="mode-badge" id="mode-badge">🧪 DEMO</div>
+        </div>
+    </nav>
+
+    <!-- ===================== GLOBAL HEADER ===================== -->
+    <header id="global-header">
+        <div class="gh-left">
+            <div class="gh-greeting">
+                <h2 id="greeting">Selamat Pagi 👋</h2>
+                <p class="subtitle" id="date-display">Loading...</p>
+            </div>
+        </div>
+        <div class="gh-center">
+            <div class="search-box gh-search">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="search-icon"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input type="text" placeholder="Search events..." class="gh-search-input">
+            </div>
+        </div>
+        <div class="gh-right">
+            <button id="btn-add-event" class="btn btn-primary gh-add-btn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Add Event
+            </button>
+            <button id="theme-toggle" class="theme-toggle-btn" aria-label="Toggle Theme">
+                <span class="theme-icon-light" title="Switch to Light Mode">☀️</span>
+                <span class="theme-icon-dark hidden" title="Switch to Dark Mode">🌙</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- ===================== MAIN CONTENT ===================== -->
+    <main id="main-content">
+
+        <!-- ============ HOME PAGE ============ -->
+        <section id="page-home" class="page active">
+            <div class="dashboard-layout">
+                <!-- Left Sidebar (Inner) -->
+                <aside class="dashboard-sidebar">
+                    <div class="mini-calendar">
+                        <h4 style="text-align: center; margin-bottom: 12px;">May 2026</h4>
+                        <div class="mini-cal-grid">
+                            <span class="muted">S</span><span class="muted">M</span><span class="muted">T</span><span class="muted">W</span><span class="muted">T</span><span class="muted">F</span><span class="muted">S</span>
+                            <span class="muted">26</span><span class="muted">27</span><span class="muted">28</span><span class="muted">29</span><span class="muted">30</span><span class="muted">1</span><span>2</span>
+                            <span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span>
+                            <span>10</span><span>11</span><span>12</span><span>13</span><span>14</span><span class="active">16</span><span>17</span>
+                            <span>18</span><span>19</span><span>20</span><span>21</span><span>22</span><span>23</span><span>24</span>
+                            <span>25</span><span>26</span><span>27</span><span>28</span><span>29</span><span>30</span><span>31</span>
+                            <span class="muted">1</span><span class="muted">2</span><span class="muted">3</span><span class="muted">4</span><span class="muted">5</span><span class="muted">6</span><span class="muted">7</span>
+                        </div>
+                    </div>
+
+                    <div class="todo-list">
+                        <div class="todo-header">
+                            <h4>My To Do List</h4>
+                            <button class="btn-icon" id="todo-add-btn" title="Tambah tugas baru">+</button>
+                        </div>
+                        <div id="todo-input-row" class="todo-input-row hidden">
+                            <input type="text" id="todo-new-input" class="gh-search-input" placeholder="Tulis tugas baru...">
+                            <button id="todo-save-btn" class="btn btn-primary" style="padding: 6px 14px; font-size: 12px;">Simpan</button>
+                        </div>
+                        <div id="todo-items" class="todo-items-scroll">
+                            <!-- Dynamically populated by JS -->
+                        </div>
+                    </div>
+
+                    <!-- Panic Button in Sidebar -->
+                    <button id="panic-btn" class="panic-btn-sidebar" aria-label="Jadwalku Berantakan">
+                        <span class="panic-btn-icon">🚨</span>
+                        <span class="panic-btn-label">Jadwalku Berantakan</span>
+                    </button>
+                </aside>
+
+                <!-- Main Content Area -->
+                <div class="dashboard-main">
+                    <div class="card" id="schedule-card" style="margin-bottom: 0; padding: 16px;">
+                        <div id="calendar-view"></div>
+                        <div class="timeline hidden" id="timeline-today"></div>
+                    </div>
+                </div>
+            </div>
+            <!-- Event Detail Popup -->
+            <div id="event-popup" class="event-popup hidden" role="dialog" aria-modal="true">
+                <div class="event-popup-card">
+                    <div class="event-popup-header">
+                        <div class="event-popup-title-group">
+                            <span class="event-popup-dot" id="popup-dot"></span>
+                            <h3 class="event-popup-title" id="popup-title">Event Title</h3>
+                        </div>
+                        <button class="event-popup-close" id="popup-close">&times;</button>
+                    </div>
+                    <div class="event-popup-body">
+                        <div class="event-popup-row">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                            <span id="popup-time">08:00 – 09:00</span>
+                        </div>
+                        <div class="event-popup-row">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+                            <span id="popup-priority">Medium</span>
+                        </div>
+                    </div>
+                    <div class="event-popup-footer">
+                        <button class="popup-action-btn popup-edit-btn" id="popup-edit-btn">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                            Edit
+                        </button>
+                        <button class="popup-action-btn popup-delete-btn" id="popup-delete-btn">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                            Hapus
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Add Event Modal -->
+            <div id="add-event-modal" class="modal-overlay hidden">
+                <div class="modal glass-card">
+                    <button class="modal-close" id="add-event-close">&times;</button>
+                    <h2>📅 Tambah Kegiatan</h2>
+                    <div class="form-group" style="margin-top: 16px;">
+                        <label for="event-title">Nama Kegiatan</label>
+                        <input type="text" id="event-title" class="input-field" placeholder="Contoh: Rapat BEM">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="event-start">Waktu Mulai</label>
+                            <input type="time" id="event-start" class="input-field">
+                        </div>
+                        <div class="form-group">
+                            <label for="event-end">Waktu Selesai</label>
+                            <input type="time" id="event-end" class="input-field">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="event-priority">Prioritas</label>
+                        <select id="event-priority">
+                            <option value="high">🔴 Tinggi (High)</option>
+                            <option value="medium" selected>🟡 Sedang (Medium)</option>
+                            <option value="low">🟢 Rendah (Low)</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="display:flex; align-items:center; gap: 8px;">
+                        <input type="checkbox" id="event-immovable">
+                        <label for="event-immovable" style="margin-bottom:0; cursor:pointer;">Wajib (Tidak bisa digeser AI)</label>
+                    </div>
+                    <button id="add-event-submit" class="btn btn-primary btn-full">
+                        <span class="btn-text">Simpan Jadwal</span>
+                        <span class="btn-loader hidden"></span>
+                    </button>
+                </div>
+            </div>
+
+
+
+            <!-- Panic Modal -->
+            <div id="panic-modal" class="modal-overlay hidden">
+                <div class="modal glass-card">
+                    <button class="modal-close" id="panic-modal-close">&times;</button>
+                    <h2>🚨 Rescue Mode</h2>
+                    <p class="modal-subtitle">Tenang, ceritakan kondisimu sekarang.</p>
+                    <div class="form-group">
+                        <label for="panic-message">Apa yang terjadi?</label>
+                        <textarea id="panic-message" rows="3" placeholder='Contoh: "Aku ketiduran, baru bangun jam 12. Energiku sisa 40%..."'></textarea>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="panic-energy">Level Energi</label>
+                            <div class="slider-wrapper">
+                                <input type="range" id="panic-energy" min="1" max="10" value="4">
+                                <span class="slider-value" id="panic-energy-val">4</span>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="panic-mood">Mood</label>
+                            <select id="panic-mood">
+                                <option value="exhausted">😵 Exhausted</option>
+                                <option value="stressed">😰 Stressed</option>
+                                <option value="okay">😐 Okay</option>
+                                <option value="good">😊 Good</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button id="panic-submit" class="btn btn-danger btn-full">
+                        <span class="btn-text">⚡ Rescue Jadwalku</span>
+                        <span class="btn-loader hidden"></span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Result Section (Before/After) -->
+            <div id="rescue-result" class="hidden">
+                <div class="card empathy-card">
+                    <p id="empathy-message" class="empathy-text"></p>
+                </div>
+                <div class="diff-container">
+                    <div class="diff-column">
+                        <h3 class="diff-title diff-before">❌ Sebelum</h3>
+                        <div class="timeline" id="timeline-before"></div>
+                    </div>
+                    <div class="diff-arrow">→</div>
+                    <div class="diff-column">
+                        <h3 class="diff-title diff-after">✅ Sesudah</h3>
+                        <div class="timeline" id="timeline-after"></div>
+                    </div>
+                </div>
+                <!-- Reasoning Transcript -->
+                <div class="card reasoning-card">
+                    <button class="reasoning-toggle" id="reasoning-toggle">
+                        🧠 Alasan FlowMate <span class="chevron">▼</span>
+                    </button>
+                    <div class="reasoning-body" id="reasoning-body">
+                        <ul id="reasoning-list"></ul>
+                    </div>
+                </div>
+                <!-- Daily Tip -->
+                <div class="card tip-card">
+                    <p id="daily-tip"></p>
+                </div>
+                <!-- Approve Button -->
+                <div class="approve-section">
+                    <button id="approve-btn" class="btn btn-success btn-full">
+                        ✅ Terapkan Jadwal Baru
+                    </button>
+                    <button id="reject-btn" class="btn btn-ghost btn-full">
+                        Batalkan
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ CHECK-IN PAGE ============ -->
+        <section id="page-checkin" class="page">
+            <header class="page-header">
+                <h1>☀️ Morning Check-in</h1>
+                <p class="subtitle">Bagaimana tidurmu semalam?</p>
+            </header>
+            <div class="card glass-card">
+                <div class="form-group">
+                    <label for="ci-sleep">Jam Tidur (jam)</label>
+                    <div class="slider-wrapper">
+                        <input type="range" id="ci-sleep" min="1" max="12" value="6" step="0.5">
+                        <span class="slider-value" id="ci-sleep-val">6</span>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="ci-wake">Jam Bangun</label>
+                    <input type="time" id="ci-wake" value="07:00" class="input-field">
+                </div>
+                <div class="form-group">
+                    <label for="ci-energy">Level Energi</label>
+                    <div class="energy-bubbles" id="ci-energy-bubbles">
+                        <button class="energy-bubble" data-value="1">1</button>
+                        <button class="energy-bubble" data-value="2">2</button>
+                        <button class="energy-bubble" data-value="3">3</button>
+                        <button class="energy-bubble" data-value="4">4</button>
+                        <button class="energy-bubble" data-value="5">5</button>
+                        <button class="energy-bubble active" data-value="6">6</button>
+                        <button class="energy-bubble" data-value="7">7</button>
+                        <button class="energy-bubble" data-value="8">8</button>
+                        <button class="energy-bubble" data-value="9">9</button>
+                        <button class="energy-bubble" data-value="10">10</button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Mood Pagi Ini</label>
+                    <div class="mood-selector" id="ci-mood-selector">
+                        <button class="mood-btn" data-mood="energetic">🔥 Berenergi</button>
+                        <button class="mood-btn" data-mood="calm">😌 Tenang</button>
+                        <button class="mood-btn active" data-mood="neutral">😐 Biasa</button>
+                        <button class="mood-btn" data-mood="tired">😴 Ngantuk</button>
+                        <button class="mood-btn" data-mood="stressed">😰 Cemas</button>
+                    </div>
+                </div>
+                <button id="checkin-submit" class="btn btn-primary btn-full">
+                    <span class="btn-text">☀️ Sesuaikan Jadwalku</span>
+                    <span class="btn-loader hidden"></span>
+                </button>
+            </div>
+            <div id="checkin-result" class="hidden"></div>
+        </section>
+
+        <!-- ============ JOURNAL PAGE ============ -->
+        <section id="page-journal" class="page">
+            <header class="page-header">
+                <h1>📝 AI Journal</h1>
+                <p class="subtitle">Tulis apapun yang ada di pikiranmu.</p>
+            </header>
+            <div class="card glass-card">
+                <textarea id="journal-text" rows="6" class="journal-textarea" placeholder="Hari ini aku merasa... / Hal yang bikin aku stuck hari ini adalah..."></textarea>
+                <button id="journal-submit" class="btn btn-primary btn-full">
+                    <span class="btn-text">📝 Simpan & Analisis</span>
+                    <span class="btn-loader hidden"></span>
+                </button>
+            </div>
+            <!-- Journal Insight -->
+            <div id="journal-insight" class="hidden">
+                <div class="card insight-card">
+                    <h3>🔮 Analisis FlowMate</h3>
+                    <div id="insight-content"></div>
+                </div>
+            </div>
+            <!-- Past Entries -->
+            <div class="card" id="journal-history-card">
+                <h3>📚 Jurnal Sebelumnya</h3>
+                <div id="journal-history">
+                    <p class="empty-state">Belum ada jurnal yang ditulis.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ DASHBOARD PAGE ============ -->
+        <section id="page-dashboard" class="page">
+            <header class="page-header">
+                <h1>📊 Dashboard</h1>
+                <p class="subtitle">Pola energi & produktivitasmu.</p>
+            </header>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <span class="stat-icon">🚨</span>
+                    <span class="stat-value" id="stat-reschedules">0</span>
+                    <span class="stat-label">Rescue</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-icon">☀️</span>
+                    <span class="stat-value" id="stat-checkins">0</span>
+                    <span class="stat-label">Check-in</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-icon">⚡</span>
+                    <span class="stat-value" id="stat-avg-energy">0</span>
+                    <span class="stat-label">Avg Energi</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-icon">📝</span>
+                    <span class="stat-value" id="stat-journals">0</span>
+                    <span class="stat-label">Jurnal</span>
+                </div>
+            </div>
+            <div class="card">
+                <h3>⚡ Tren Energi</h3>
+                <div class="chart-container">
+                    <canvas id="energy-chart"></canvas>
+                </div>
+            </div>
+            <div class="card">
+                <h3>😊 Distribusi Mood</h3>
+                <div class="chart-container chart-small">
+                    <canvas id="mood-chart"></canvas>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

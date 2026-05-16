@@ -1,0 +1,106 @@
+{
+  "empathy_message": "Wajar banget kalau kepalamu masih berat setelah hanya tidur 4 jam. Jangan merasa bersalah karena ketiduran, aku sudah mengatur ulang jadwalmu supaya kamu punya cukup waktu istirahat sebelum kelas jam 2 siang.",
+  "new_schedule": [
+    {
+      "id": "evt_001",
+      "title": "Morning Run & Gym",
+      "start": "07:00",
+      "end": "08:00",
+      "status": "removed",
+      "is_immovable": false
+    },
+    {
+      "id": "evt_add_1",
+      "title": "Rest Break (Makan & Santai)",
+      "start": "11:45",
+      "end": "12:45",
+      "status": "added",
+      "is_immovable": false
+    },
+    {
+      "id": "evt_add_2",
+      "title": "Power Nap (20 min)",
+      "start": "13:00",
+      "end": "13:20",
+      "status": "added",
+      "is_immovable": false
+    },
+    {
+      "id": "evt_003",
+      "title": "Kuliah Sistem Kontrol",
+      "start": "14:00",
+      "end": "16:00",
+      "status": "kept",
+      "is_immovable": true
+    },
+    {
+      "id": "evt_004",
+      "title": "Ngerjain Tugas Robotika",
+      "start": "16:30",
+      "end": "18:30",
+      "status": "kept",
+      "is_immovable": false
+    },
+    {
+      "id": "evt_005",
+      "title": "Olahraga Ringan / Jalan Sore",
+      "start": "19:00",
+      "end": "19:45",
+      "status": "removed",
+      "is_immovable": false
+    },
+    {
+      "id": "evt_002",
+      "title": "Belajar Deep Learning (Chapter 5)",
+      "start": "20:00",
+      "end": "21:30",
+      "status": "moved",
+      "is_immovable": false
+    }
+  ],
+  "reasoning_transcript": [
+    {
+      "icon": "🏃",
+      "action": "removed",
+      "event_title": "Morning Run & Gym",
+      "reason": "Sudah terlewat, dan dengan energi rendah lebih baik fokus pada pemulihan hari ini."
+    },
+    {
+      "icon": "🍽️",
+      "action": "added",
+      "event_title": "Rest Break (Makan & Santai)",
+      "reason": "Memberi waktu untuk makan siang santai dan mengumpulkan nyawa setelah bangun tidur."
+    },
+    {
+      "icon": "🛌",
+      "action": "added",
+      "event_title": "Power Nap (20 min)",
+      "reason": "Tidur siang singkat wajib untuk meredakan kepala berat dan mengembalikan fokus sebelum kuliah."
+    },
+    {
+      "icon": "🏛️",
+      "action": "kept",
+      "event_title": "Kuliah Sistem Kontrol",
+      "reason": "Jadwal wajib yang tidak bisa digeser."
+    },
+    {
+      "icon": "🤖",
+      "action": "kept",
+      "event_title": "Ngerjain Tugas Robotika",
+      "reason": "Tetap dikerjakan sore hari dengan jeda transisi 30 menit setelah kuliah selesai."
+    },
+    {
+      "icon": "🚶",
+      "action": "removed",
+      "event_title": "Olahraga Ringan / Jalan Sore",
+      "reason": "Dihapus agar jadwal tidak terlalu padat dan memberi ruang istirahat yang cukup."
+    },
+    {
+      "icon": "🧠",
+      "action": "moved",
+      "event_title": "Belajar Deep Learning (Chapter 5)",
+      "reason": "Materi berat digeser ke malam hari agar energi sudah pulih setelah aktivitas sore."
+    }
+  ],
+  "daily_tip": "Minum segelas air putih hangat sekarang untuk membantu meredakan kepala yang berat, lalu cuci muka agar terasa lebih segar."
+}

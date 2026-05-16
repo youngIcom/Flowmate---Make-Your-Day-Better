@@ -1,0 +1,17 @@
+# Environment variables — JANGAN di-push!
+.env
+.env.local
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Data lokal
+dummy_calendar.json
+
+# OS
+.DS_Store
+*.log
