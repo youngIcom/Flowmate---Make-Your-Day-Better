@@ -5,18 +5,27 @@ Backend server powered by FastAPI + Google Gemini
 
 import os
 import json
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
+from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 
 load_dotenv()
+
+from database import init_db, get_db, User, Event, JournalEntry, CheckinRecord
+from auth import (
+    hash_password, verify_password, create_access_token,
+    get_current_user, oauth2_scheme
+)
 
 # ---------------------------------------------------------------------------
 # Config
@@ -56,7 +65,10 @@ else:
 # ---------------------------------------------------------------------------
 # FastAPI app
 # ---------------------------------------------------------------------------
-app = FastAPI(title="FlowMate API", version="1.0.0")
+app = FastAPI(title="FlowMate API", version="2.0.0")
+
+# Init DB on startup
+init_db()
 
 app.add_middleware(
     CORSMiddleware,
@@ -69,6 +81,11 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 # Pydantic models
 # ---------------------------------------------------------------------------
+class UserRegister(BaseModel):
+    username: str
+    email: str
+    password: str
+
 class UserCondition(BaseModel):
     sleep_hours: float
     energy_level: int
@@ -100,11 +117,10 @@ class JournalRequest(BaseModel):
     date: Optional[str] = None
 
 # ---------------------------------------------------------------------------
-# In-memory storage (replaced by Firestore in production)
+# In-memory fallback (only used before DB is ready)
 # ---------------------------------------------------------------------------
-journal_entries: list = []
-checkin_history: list = []
-user_events: list = []  # Real user events — starts empty
+_checkin_cache: list = []
+_journal_cache: list = []
 
 # ---------------------------------------------------------------------------
 # Helper: load/save JSON
@@ -137,125 +153,379 @@ async def call_gemini(payload: dict) -> dict:
 # API Endpoints
 # ---------------------------------------------------------------------------
 
+# ===========================================================================
+# AUTH ENDPOINTS
+# ===========================================================================
+
+@app.post("/api/auth/register")
+def register(data: UserRegister, db: Session = Depends(get_db)):
+    """Register a new user."""
+    if db.query(User).filter(User.username == data.username).first():
+        raise HTTPException(status_code=400, detail="Username sudah digunakan.")
+    if db.query(User).filter(User.email == data.email).first():
+        raise HTTPException(status_code=400, detail="Email sudah terdaftar.")
+    user = User(
+        id=str(uuid.uuid4()),
+        username=data.username,
+        email=data.email,
+        hashed_pw=hash_password(data.password),
+    )
+    db.add(user)
+    db.commit()
+    token = create_access_token({"sub": user.id})
+    return {"access_token": token, "token_type": "bearer", "username": user.username}
+
+@app.post("/api/auth/login")
+def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    """Login with username + password."""
+    user = db.query(User).filter(User.username == form.username).first()
+    if not user or not verify_password(form.password, user.hashed_pw):
+        raise HTTPException(status_code=401, detail="Username atau password salah.")
+    token = create_access_token({"sub": user.id})
+    return {"access_token": token, "token_type": "bearer", "username": user.username}
+
+class GoogleAuthRequest(BaseModel):
+    credential: str
+
+from google.oauth2 import id_token
+from google.auth.transport import requests
+
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "1028741369796-0s022of7t00c0a969l7bkkq70bmsffo1.apps.googleusercontent.com")
+
+@app.post("/api/auth/google")
+def google_login(data: GoogleAuthRequest, db: Session = Depends(get_db)):
+    """Login or register via Google Sign-In."""
+    try:
+        idinfo = id_token.verify_oauth2_token(data.credential, requests.Request(), GOOGLE_CLIENT_ID)
+        email = idinfo['email']
+        name = idinfo.get('name', email.split('@')[0])
+        
+        user = db.query(User).filter(User.email == email).first()
+        if not user:
+            # Create user if it doesn't exist
+            user = User(
+                id=str(uuid.uuid4()),
+                username=name.replace(" ", "_").lower() + "_" + str(uuid.uuid4())[:4],
+                email=email,
+                hashed_pw=None # No password for Google users
+            )
+            db.add(user)
+            db.commit()
+            
+        token = create_access_token({"sub": user.id})
+        return {"access_token": token, "token_type": "bearer", "username": user.username}
+    except ValueError:
+        raise HTTPException(status_code=401, detail="Invalid Google token")
+
+@app.get("/api/auth/me")
+def me(current_user: User = Depends(get_current_user)):
+    """Get current logged-in user info."""
+    return {"id": current_user.id, "username": current_user.username, "email": current_user.email}
+
+class GcalSyncRequest(BaseModel):
+    access_token: str
+
+import requests as pyrequests
+
+@app.post("/api/sync-gcal")
+def sync_gcal(
+    data: GcalSyncRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    token = data.access_token
+    if not token:
+        raise HTTPException(status_code=400, detail="No token provided")
+    
+    from datetime import timedelta
+    # Get events for 7 days
+    today = datetime.now()
+    end_date = today + timedelta(days=7)
+    today_start = today.replace(hour=0, minute=0, second=0).isoformat() + "Z"
+    today_end = end_date.replace(hour=23, minute=59, second=59).isoformat() + "Z"
+    
+    headers = {"Authorization": f"Bearer {token}"}
+    params = {
+        "timeMin": today_start,
+        "timeMax": today_end,
+        "singleEvents": True,
+        "orderBy": "startTime"
+    }
+    
+    resp = pyrequests.get("https://www.googleapis.com/calendar/v3/calendars/primary/events", headers=headers, params=params)
+    if resp.status_code != 200:
+        raise HTTPException(status_code=resp.status_code, detail="Failed to fetch from Google Calendar")
+    
+    gcal_data = resp.json()
+    new_events_count = 0
+    today_str = today.strftime("%Y-%m-%d")
+    
+    for item in gcal_data.get("items", []):
+        title = item.get("summary", "Busy")
+        start_time = item.get("start", {}).get("dateTime")
+        end_time = item.get("end", {}).get("dateTime")
+        
+        # skip all-day events for now
+        if not start_time or not end_time:
+            continue 
+        
+        try:
+            # parse 2026-05-16T14:00:00+07:00 -> Date & Time
+            event_date_str = start_time.split("T")[0]
+            start_hm = start_time.split("T")[1][:5]
+            end_hm = end_time.split("T")[1][:5]
+            
+            # Avoid duplicate exactly matched by title and start time
+            exists = db.query(Event).filter(
+                Event.user_id == current_user.id,
+                Event.event_date == event_date_str,
+                Event.title == "[GCal] " + title,
+                Event.start == start_hm
+            ).first()
+            
+            if not exists:
+                db_event = Event(
+                    id=str(uuid.uuid4()),
+                    user_id=current_user.id,
+                    title="[GCal] " + title,
+                    start=start_hm,
+                    end=end_hm,
+                    event_date=event_date_str,
+                    is_immovable=True, 
+                    priority="high"
+                )
+                db.add(db_event)
+                new_events_count += 1
+        except Exception:
+            continue
+
+    db.commit()
+    return {"status": "success", "synced_count": new_events_count}
+
+# ===========================================================================
+# EVENTS ENDPOINTS (now persisted in SQLite)
+# ===========================================================================
+
+@app.get("/api/events")
+def get_events(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    today = datetime.now().strftime("%Y-%m-%d")
+    all_events = db.query(Event).filter(Event.user_id == current_user.id).all()
+    
+    today_events = [e for e in all_events if e.event_date == today]
+    
+    return {
+        "today_events": [
+            {"id": e.id, "title": e.title, "start": e.start, "end": e.end,
+             "is_immovable": e.is_immovable, "priority": e.priority, "date": e.event_date}
+            for e in today_events
+        ],
+        "all_events": [
+            {"id": e.id, "title": e.title, "start": e.start, "end": e.end,
+             "is_immovable": e.is_immovable, "priority": e.priority, "date": e.event_date}
+            for e in all_events
+        ]
+    }
+
+@app.post("/api/events")
+def add_event(
+    event: CalendarEvent,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    today = datetime.now().strftime("%Y-%m-%d")
+    db_event = Event(
+        id=event.id or str(uuid.uuid4()),
+        user_id=current_user.id,
+        title=event.title,
+        start=event.start,
+        end=event.end,
+        event_date=today,
+        is_immovable=event.is_immovable,
+        priority=event.priority,
+    )
+    db.add(db_event)
+    db.commit()
+    return {"status": "success", "event": db_event.id}
+
+@app.delete("/api/events/{event_id}")
+def delete_event(
+    event_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    event = db.query(Event).filter(Event.id == event_id, Event.user_id == current_user.id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event tidak ditemukan.")
+    db.delete(event)
+    db.commit()
+    return {"status": "deleted"}
+
+# ===========================================================================
+# RESCHEDULE (Panic Button)
+# ===========================================================================
+
 @app.post("/api/reschedule")
-async def reschedule(request: RescheduleRequest):
-    """The Panic Button — reschedule the rest of the day."""
+async def reschedule(
+    request: RescheduleRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """The Panic Button — let AI reschedule the rest of your day."""
     result = await call_gemini(request.dict())
-    # Save to history
-    checkin_history.append({
-        "type": "rescue",
-        "timestamp": datetime.now().isoformat(),
-        "energy_level": request.user_condition.energy_level,
-        "mood": request.user_condition.mood,
-        "events_before": len(request.today_events),
-        "events_after": len(result.get("new_schedule", [])),
-    })
+
+    # Persist the rescue record
+    record = CheckinRecord(
+        id=str(uuid.uuid4()),
+        user_id=current_user.id,
+        type="rescue",
+        energy_level=request.user_condition.energy_level,
+        mood=request.user_condition.mood,
+        events_before=len(request.today_events),
+        events_after=len(result.get("new_schedule", [])),
+    )
+    db.add(record)
+
+    # Apply new schedule to DB (replace today's events with AI result)
+    new_schedule = result.get("new_schedule", [])
+    if new_schedule:
+        today = datetime.now().strftime("%Y-%m-%d")
+        # Remove all existing today's events
+        db.query(Event).filter(
+            Event.user_id == current_user.id,
+            Event.event_date == today
+        ).delete()
+        # Insert rescheduled events
+        for ev in new_schedule:
+            db.add(Event(
+                id=str(uuid.uuid4()),
+                user_id=current_user.id,
+                title=ev.get("title", "Untitled"),
+                start=ev.get("start", "09:00"),
+                end=ev.get("end", "10:00"),
+                event_date=today,
+                is_immovable=ev.get("is_immovable", False),
+                priority=ev.get("priority", "medium"),
+            ))
+    db.commit()
     return result
 
+# ===========================================================================
+# CHECK-IN
+# ===========================================================================
+
 @app.post("/api/checkin")
-async def morning_checkin(request: CheckinRequest):
-    """Smart Morning Check-in — adjust today based on how you slept."""
+async def morning_checkin(
+    request: CheckinRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     payload = {
         "current_time": request.wake_up_time,
         "user_condition": {
             "sleep_hours": request.sleep_hours,
             "energy_level": request.energy_level,
             "mood": request.mood,
-            "message": f"Aku baru bangun jam {request.wake_up_time}. Tidurku {request.sleep_hours} jam. Mood: {request.mood}.",
+            "message": f"Aku baru bangun jam {request.wake_up_time}. Tidurku {request.sleep_hours} jam.",
         },
         "today_events": [e.dict() for e in request.today_events],
     }
     result = await call_gemini(payload)
-    # Save to history
-    checkin_history.append({
-        "type": "checkin",
-        "timestamp": datetime.now().isoformat(),
-        "energy_level": request.energy_level,
-        "mood": request.mood,
-        "sleep_hours": request.sleep_hours,
-    })
+    record = CheckinRecord(
+        id=str(uuid.uuid4()),
+        user_id=current_user.id,
+        type="checkin",
+        sleep_hours=request.sleep_hours,
+        energy_level=request.energy_level,
+        mood=request.mood,
+    )
+    db.add(record)
+    db.commit()
     return result
 
-@app.post("/api/journal")
-async def save_journal(entry: JournalRequest):
-    """Save a journal entry and get AI insights."""
-    record = {
-        "text": entry.text,
-        "date": entry.date or datetime.now().strftime("%Y-%m-%d"),
-        "timestamp": datetime.now().isoformat(),
-    }
+# ===========================================================================
+# JOURNAL
+# ===========================================================================
 
-    # Get AI analysis of the journal entry
+@app.post("/api/journal")
+async def save_journal(
+    entry: JournalRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    analysis = {
+        "mood": "netral",
+        "productivity": 5,
+        "blockers": [],
+        "insight": "Terima kasih sudah menulis hari ini. Terus semangat!"
+    }
     if not DEMO_MODE and genai_model is not None:
         try:
-            analysis_prompt = f"""Analyze this journal entry from a user. Extract mood, productivity level (1-10), 
-            main blockers, and provide one supportive insight. Respond in Indonesian. 
-            Return JSON with: {{"mood": "...", "productivity": N, "blockers": ["..."], "insight": "..."}}
-            
+            prompt = f"""Analyze this journal entry in Indonesian. 
+            Return JSON: {{"mood":"...","productivity":N,"blockers":[...],"insight":"..."}}
             Journal: {entry.text}"""
-            response = genai_model.generate_content(analysis_prompt)
-            record["analysis"] = json.loads(response.text)
+            response = genai_model.generate_content(prompt)
+            analysis = json.loads(response.text)
         except Exception:
-            record["analysis"] = {
-                "mood": "netral",
-                "productivity": 5,
-                "blockers": [],
-                "insight": "Terima kasih sudah menulis hari ini. Terus semangat!"
-            }
-    else:
-        record["analysis"] = {
-            "mood": "lelah tapi semangat",
-            "productivity": 6,
-            "blockers": ["kurang tidur", "tugas menumpuk"],
-            "insight": "Kamu sudah berani jujur tentang kondisimu hari ini — itu langkah pertama yang bagus. Coba tidur 30 menit lebih awal malam ini."
-        }
+            pass
 
-    journal_entries.append(record)
-    return {"status": "saved", "entry": record}
+    record = JournalEntry(
+        id=str(uuid.uuid4()),
+        user_id=current_user.id,
+        text=entry.text,
+        mood=analysis.get("mood"),
+        date=entry.date or datetime.now().strftime("%Y-%m-%d"),
+    )
+    db.add(record)
+    db.commit()
+    return {"status": "saved", "analysis": analysis}
 
 @app.get("/api/journal")
-async def get_journal():
-    """Retrieve all journal entries."""
-    return {"entries": journal_entries}
+def get_journal(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    entries = db.query(JournalEntry).filter(
+        JournalEntry.user_id == current_user.id
+    ).order_by(JournalEntry.created_at.desc()).limit(30).all()
+    return {"entries": [
+        {"id": e.id, "text": e.text, "mood": e.mood, "date": e.date}
+        for e in entries
+    ]}
+
+# ===========================================================================
+# DASHBOARD ANALYTICS
+# ===========================================================================
 
 @app.get("/api/dashboard")
-async def get_dashboard():
-    """Get dashboard analytics data."""
+def get_dashboard(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    records = db.query(CheckinRecord).filter(CheckinRecord.user_id == current_user.id).all()
+    avg_energy = (
+        round(sum(r.energy_level for r in records if r.energy_level) / len(records), 1)
+        if records else 0
+    )
     return {
-        "checkin_history": checkin_history,
-        "journal_entries": journal_entries,
-        "total_reschedules": sum(1 for c in checkin_history if c["type"] == "rescue"),
-        "total_checkins": sum(1 for c in checkin_history if c["type"] == "checkin"),
-        "avg_energy": (
-            round(sum(c["energy_level"] for c in checkin_history) / len(checkin_history), 1)
-            if checkin_history else 0
-        ),
+        "total_reschedules": sum(1 for r in records if r.type == "rescue"),
+        "total_checkins": sum(1 for r in records if r.type == "checkin"),
+        "avg_energy": avg_energy,
+        "checkin_history": [
+            {"type": r.type, "mood": r.mood, "energy_level": r.energy_level,
+             "timestamp": r.timestamp.isoformat()}
+            for r in records[-30:]
+        ],
     }
 
-@app.get("/api/events")
-async def get_events():
-    """Get all user-created events."""
-    return {"today_events": user_events}
-
-@app.post("/api/events")
-async def add_event(event: CalendarEvent):
-    """Add a new event created by the user."""
-    user_events.append(event.model_dump() if hasattr(event, "model_dump") else event.dict())
-    return {"status": "success", "event": event}
-
-@app.delete("/api/events/{event_id}")
-async def delete_event(event_id: str):
-    """Delete an event by ID."""
-    global user_events
-    user_events = [e for e in user_events if e["id"] != event_id]
-    return {"status": "deleted"}
-
 @app.get("/api/health")
-async def health():
+def health():
     return {"status": "ok", "mode": "DEMO" if DEMO_MODE else "LIVE"}
 
 # ---------------------------------------------------------------------------
-# Serve frontend static files
+# Serve frontend
 # ---------------------------------------------------------------------------
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
@@ -263,9 +533,6 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 async def root():
     return FileResponse(str(BASE_DIR / "static" / "index.html"))
 
-# ---------------------------------------------------------------------------
-# Run
-# ---------------------------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=PORT, reload=True)

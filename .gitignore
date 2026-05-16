@@ -11,6 +11,8 @@ venv/
 
 # Data lokal
 dummy_calendar.json
+*.db
+flowmate.db
 
 # OS
 .DS_Store

@@ -5,8 +5,10 @@
 const API = '';
 
 // ============================================================
-// STATE
+// STATE & AUTH
 // ============================================================
+let authToken = localStorage.getItem('flowmate_token');
+let authUser = localStorage.getItem('flowmate_user');
 let currentPage = 'home';
 let demoCalendar = [];
 let selectedEnergy = 6;
@@ -19,6 +21,9 @@ let fullCalendarInstance = null;
 // INIT
 // ============================================================
 document.addEventListener('DOMContentLoaded', () => {
+    checkAuth();
+    setupAuthUI();
+    setupUserMenu();
     setupNavigation();
     setupGreeting();
     setupPanicButton();
@@ -32,13 +37,285 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ============================================================
+// AUTHENTICATION LOGIC
+// ============================================================
+async function apiFetch(endpoint, options = {}) {
+    if (!options.headers) options.headers = {};
+    if (authToken) {
+        options.headers['Authorization'] = `Bearer ${authToken}`;
+    }
+    const res = await fetch(`${API}${endpoint}`, options);
+    if (res.status === 401) {
+        logout();
+        throw new Error('Unauthorized');
+    }
+    return res;
+}
+
+function checkAuth() {
+    const overlay = document.getElementById('auth-overlay');
+    if (!authToken) {
+        overlay.classList.remove('hidden');
+    } else {
+        overlay.classList.add('hidden');
+        document.getElementById('greeting').innerHTML = `Selamat Pagi, ${authUser} 👋`;
+        document.getElementById('user-avatar-initial').textContent = authUser.charAt(0).toUpperCase();
+        document.getElementById('profile-avatar-initial').textContent = authUser.charAt(0).toUpperCase();
+        document.getElementById('dropdown-username').textContent = authUser;
+        // Fetch email
+        apiFetch('/api/auth/me')
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('dropdown-email').textContent = data.email;
+            })
+            .catch(e => console.error(e));
+    }
+}
+
+function logout() {
+    authToken = null;
+    authUser = null;
+    localStorage.removeItem('flowmate_token');
+    localStorage.removeItem('flowmate_user');
+    checkAuth();
+}
+
+function setupAuthUI() {
+    const tabLogin = document.getElementById('tab-login');
+    const tabReg = document.getElementById('tab-register');
+    const formLogin = document.getElementById('login-form');
+    const formReg = document.getElementById('register-form');
+
+    tabLogin.addEventListener('click', () => {
+        tabLogin.classList.add('active'); tabReg.classList.remove('active');
+        formLogin.classList.remove('hidden'); formReg.classList.add('hidden');
+    });
+    tabReg.addEventListener('click', () => {
+        tabReg.classList.add('active'); tabLogin.classList.remove('active');
+        formReg.classList.remove('hidden'); formLogin.classList.add('hidden');
+    });
+
+    formLogin.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const u = document.getElementById('login-username').value;
+        const p = document.getElementById('login-password').value;
+        const err = document.getElementById('login-error');
+        const btn = document.getElementById('login-btn');
+        err.classList.add('hidden'); setLoading(btn, true);
+        
+        try {
+            const formData = new URLSearchParams();
+            formData.append('username', u);
+            formData.append('password', p);
+            
+            const res = await fetch(`${API}/api/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: formData
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || 'Login gagal');
+            
+            authToken = data.access_token;
+            authUser = data.username;
+            localStorage.setItem('flowmate_token', authToken);
+            localStorage.setItem('flowmate_user', authUser);
+            checkAuth();
+        loadDemoCalendar(); // Reload data
+            showToast('Berhasil masuk!', 'success');
+        } catch (error) {
+            err.textContent = error.message;
+            err.classList.remove('hidden');
+        } finally { setLoading(btn, false); }
+    });
+
+    formReg.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const u = document.getElementById('reg-username').value;
+        const em = document.getElementById('reg-email').value;
+        const p = document.getElementById('reg-password').value;
+        const err = document.getElementById('reg-error');
+        const btn = document.getElementById('reg-btn');
+        err.classList.add('hidden'); setLoading(btn, true);
+
+        try {
+            const res = await fetch(`${API}/api/auth/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: u, email: em, password: p })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || 'Pendaftaran gagal');
+            
+            authToken = data.access_token;
+            authUser = data.username;
+            localStorage.setItem('flowmate_token', authToken);
+            localStorage.setItem('flowmate_user', authUser);
+            checkAuth();
+        loadDemoCalendar(); // Reload data
+            showToast('Akun berhasil dibuat!', 'success');
+        } catch (error) {
+            err.textContent = error.message;
+            err.classList.remove('hidden');
+        } finally { setLoading(btn, false); }
+    });
+}
+
+async function handleGoogleLogin(response) {
+    try {
+        const res = await fetch(`${API}/api/auth/google`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ credential: response.credential })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Google Login gagal');
+        
+        authToken = data.access_token;
+        authUser = data.username;
+        localStorage.setItem('flowmate_token', authToken);
+        localStorage.setItem('flowmate_user', authUser);
+        checkAuth();
+        loadDemoCalendar(); // Reload data
+        showToast('Berhasil masuk dengan Google!', 'success');
+    } catch (error) {
+        showToast(error.message, 'danger');
+    }
+}
+
+// ============================================================
+// USER MENU & MODALS
+// ============================================================
+function setupUserMenu() {
+    const btn = document.getElementById('user-menu-btn');
+    const dropdown = document.getElementById('user-dropdown');
+    
+    // Toggle Dropdown
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        dropdown.classList.toggle('hidden');
+    });
+    
+    // Close dropdown when clicking outside
+    document.addEventListener('click', () => {
+        if (!dropdown.classList.contains('hidden')) {
+            dropdown.classList.add('hidden');
+        }
+    });
+    
+    dropdown.addEventListener('click', (e) => e.stopPropagation());
+
+    // Logout
+    document.getElementById('btn-logout').addEventListener('click', () => {
+        dropdown.classList.add('hidden');
+        logout();
+        showToast('Kamu telah keluar.', 'info');
+    });
+
+    // Modals
+    const profileModal = document.getElementById('profile-modal');
+    const settingsModal = document.getElementById('settings-modal');
+
+    document.getElementById('btn-profile').addEventListener('click', async () => {
+        dropdown.classList.add('hidden');
+        profileModal.classList.remove('hidden');
+        // Fetch real user data
+        try {
+            const res = await apiFetch('/api/auth/me');
+            const data = await res.json();
+            document.getElementById('profile-username').value = data.username;
+            document.getElementById('profile-name-display').textContent = data.username;
+            document.getElementById('profile-email-display').textContent = data.email;
+        } catch(e) { /* ignore */ }
+    });
+
+    document.getElementById('btn-settings').addEventListener('click', () => {
+        dropdown.classList.add('hidden');
+        settingsModal.classList.remove('hidden');
+    });
+
+    document.getElementById('profile-close').addEventListener('click', () => profileModal.classList.add('hidden'));
+    document.getElementById('settings-close').addEventListener('click', () => settingsModal.classList.add('hidden'));
+    document.getElementById('settings-save').addEventListener('click', () => {
+        showToast('Pengaturan disimpan.', 'success');
+        settingsModal.classList.add('hidden');
+    });
+
+    // Google Calendar Sync
+    let tokenClient;
+
+    const triggerSync = () => {
+        dropdown.classList.add('hidden');
+        
+        if (typeof google === 'undefined' || !google.accounts) {
+            showToast("Google API sedang dimuat, coba lagi.", "danger");
+            return;
+        }
+
+        if (!tokenClient) {
+            tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: '849432037168-mc7ntasd097umoko4dbt0t9f9qant7s1.apps.googleusercontent.com',
+                scope: 'https://www.googleapis.com/auth/calendar.readonly',
+                callback: async (tokenResponse) => {
+                    if (tokenResponse && tokenResponse.access_token) {
+                        showToast('Mensinkronkan kalender...', 'info');
+                        try {
+                            const res = await apiFetch('/api/sync-gcal', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ access_token: tokenResponse.access_token })
+                            });
+                            const data = await res.json();
+                            if (!res.ok) throw new Error(data.detail || 'Gagal sinkron');
+                            showToast(`Berhasil sinkron ${data.synced_count} acara!`, 'success');
+                        loadDemoCalendar();
+                        } catch (err) {
+                            showToast(err.message, 'danger');
+                        }
+                    }
+                },
+            });
+        }
+        
+        tokenClient.requestAccessToken();
+    };
+
+    document.getElementById('btn-sync-gcal-menu').addEventListener('click', triggerSync);
+    document.getElementById('btn-sync-gcal-settings').addEventListener('click', triggerSync);
+}
+
+// ============================================================
 // NAVIGATION
 // ============================================================
 function setupNavigation() {
+    const sidebar = document.getElementById('sidebar');
+    const mobileBtn = document.getElementById('mobile-menu-btn');
+    
+    // Toggle sidebar on mobile
+    if (mobileBtn) {
+        mobileBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            sidebar.classList.toggle('open');
+        });
+    }
+
+    // Close sidebar when clicking outside on mobile
+    document.addEventListener('click', (e) => {
+        if (window.innerWidth <= 768 && sidebar.classList.contains('open')) {
+            if (!sidebar.contains(e.target) && !mobileBtn.contains(e.target)) {
+                sidebar.classList.remove('open');
+            }
+        }
+    });
+
     document.querySelectorAll('.nav-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const page = btn.dataset.page;
             navigateTo(page);
+            // Auto close sidebar on mobile after navigating
+            if (window.innerWidth <= 768) {
+                sidebar.classList.remove('open');
+            }
         });
     });
 }
@@ -169,10 +446,11 @@ function setupTheme() {
 // ============================================================
 async function loadDemoCalendar() {
     try {
-        const res = await fetch(`${API}/api/events`);
+        const res = await apiFetch('/api/events');
         const data = await res.json();
         demoCalendar = data.today_events || [];
-        setupFullCalendar(demoCalendar);
+        const allEvents = data.all_events || data.today_events || [];
+        setupFullCalendar(allEvents);
     } catch (e) {
         console.error('Failed to load calendar:', e);
         setupFullCalendar([]);
@@ -191,11 +469,12 @@ function setupFullCalendar(events) {
             low: { bg: '#06b6d4', border: '#06b6d4' },
         };
         const c = colors[e.priority] || colors.medium;
+        const eventDate = e.date || today;
         return {
             id: e.id,
             title: e.title,
-            start: `${today}T${e.start}:00`,
-            end: `${today}T${e.end}:00`,
+            start: `${eventDate}T${e.start}:00`,
+            end: `${eventDate}T${e.end}:00`,
             backgroundColor: e.is_immovable ? '#f59e0b' : c.bg,
             borderColor: e.is_immovable ? '#f59e0b' : c.border,
             textColor: '#ffffff'
@@ -279,7 +558,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('popup-delete-btn')?.addEventListener('click', async () => {
         if (!currentPopupEventId) return;
         try {
-            await fetch(`${API}/api/events/${currentPopupEventId}`, { method: 'DELETE' });
+            await apiFetch(`/api/events/${currentPopupEventId}`, { method: 'DELETE' });
         } catch(e) { /* ignore — event may be in-memory */ }
         // Remove from FullCalendar
         if (fullCalendarInstance) {
@@ -354,9 +633,10 @@ function setupPanicButton() {
     });
 
     // Approve / Reject
-    document.getElementById('approve-btn').addEventListener('click', () => {
+    document.getElementById('approve-btn').addEventListener('click', async () => {
         showToast('✅ Jadwal baru berhasil diterapkan!', 'success');
         document.getElementById('rescue-result').classList.add('hidden');
+        await loadDemoCalendar(); // refresh calendar from backend DB
     });
     document.getElementById('reject-btn').addEventListener('click', () => {
         document.getElementById('rescue-result').classList.add('hidden');
@@ -383,7 +663,7 @@ async function handlePanicSubmit() {
     };
 
     try {
-        const res = await fetch(`${API}/api/reschedule`, {
+        const res = await apiFetch('/api/reschedule', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
@@ -467,7 +747,7 @@ async function handleCheckin() {
     };
 
     try {
-        const res = await fetch(`${API}/api/checkin`, {
+        const res = await apiFetch('/api/checkin', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
@@ -517,7 +797,7 @@ async function handleJournalSubmit() {
     setLoading(btn, true);
 
     try {
-        const res = await fetch(`${API}/api/journal`, {
+        const res = await apiFetch('/api/journal', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text }),
@@ -549,7 +829,7 @@ function displayJournalInsight(entry) {
 
 async function loadJournalHistory() {
     try {
-        const res = await fetch(`${API}/api/journal`);
+        const res = await apiFetch('/api/journal');
         const data = await res.json();
         const container = document.getElementById('journal-history');
         const entries = data.entries || [];
@@ -575,7 +855,7 @@ async function loadJournalHistory() {
 // ============================================================
 async function loadDashboard() {
     try {
-        const res = await fetch(`${API}/api/dashboard`);
+        const res = await apiFetch('/api/dashboard');
         const data = await res.json();
 
         document.getElementById('stat-reschedules').textContent = data.total_reschedules || 0;
@@ -723,7 +1003,7 @@ function setupAddEvent() {
         setLoading(submitBtn, true);
 
         try {
-            const res = await fetch(`${API}/api/events`, {
+            const res = await apiFetch('/api/events', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(newEvent)

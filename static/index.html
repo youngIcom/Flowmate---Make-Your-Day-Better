@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="/static/css/style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js'></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
     <!-- ===================== SIDEBAR NAV ===================== -->
@@ -53,6 +54,9 @@
     <!-- ===================== GLOBAL HEADER ===================== -->
     <header id="global-header">
         <div class="gh-left">
+            <button id="mobile-menu-btn" class="mobile-menu-btn hidden" aria-label="Menu">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+            </button>
             <div class="gh-greeting">
                 <h2 id="greeting">Selamat Pagi 👋</h2>
                 <p class="subtitle" id="date-display">Loading...</p>
@@ -67,12 +71,30 @@
         <div class="gh-right">
             <button id="btn-add-event" class="btn btn-primary gh-add-btn">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                Add Event
+                <span class="btn-text">Add Event</span>
             </button>
             <button id="theme-toggle" class="theme-toggle-btn" aria-label="Toggle Theme">
                 <span class="theme-icon-light" title="Switch to Light Mode">☀️</span>
                 <span class="theme-icon-dark hidden" title="Switch to Dark Mode">🌙</span>
             </button>
+            <div class="user-menu-container">
+                <button id="user-menu-btn" class="user-avatar">
+                    <span id="user-avatar-initial">U</span>
+                </button>
+                <div id="user-dropdown" class="user-dropdown hidden">
+                    <div class="dropdown-header">
+                        <span id="dropdown-username" style="font-weight: 700; display: block;">Username</span>
+                        <span id="dropdown-email" style="font-size: 12px; color: var(--text-muted);">email@example.com</span>
+                    </div>
+                    <ul class="dropdown-list">
+                        <li><button id="btn-profile"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> Profile</button></li>
+                        <li><button id="btn-settings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> Settings</button></li>
+                        <li><button id="btn-sync-gcal-menu"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21v-5h5"/></svg> Sync GCal</button></li>
+                        <li class="divider"></li>
+                        <li><button id="btn-logout" style="color: var(--accent-danger);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg> Logout</button></li>
+                    </ul>
+                </div>
+            </div>
         </div>
     </header>
 
@@ -278,7 +300,7 @@
         <!-- ============ CHECK-IN PAGE ============ -->
         <section id="page-checkin" class="page">
             <header class="page-header">
-                <h1>☀️ Morning Check-in</h1>
+                <h1>☀️ Mood Check-in</h1>
                 <p class="subtitle">Bagaimana tidurmu semalam?</p>
             </header>
             <div class="card glass-card">
@@ -397,6 +419,181 @@
             </div>
         </section>
     </main>
+
+    <!-- ===================== PROFILE MODAL ===================== -->
+    <div id="profile-modal" class="modal-overlay hidden">
+        <div class="modal glass-card profile-modal-card">
+            <button class="modal-close" id="profile-close">&times;</button>
+            <div class="profile-header">
+                <div class="profile-avatar-large">
+                    <span id="profile-avatar-initial">U</span>
+                </div>
+                <h2 id="profile-name-display">User Name</h2>
+                <p class="subtitle" id="profile-email-display">user@example.com</p>
+                <span class="badge badge-premium">FlowMate Member</span>
+            </div>
+            
+            <div class="profile-stats">
+                <div class="p-stat">
+                    <h4>Status</h4>
+                    <p>Active</p>
+                </div>
+                <div class="p-stat">
+                    <h4>Plan</h4>
+                    <p>Free</p>
+                </div>
+            </div>
+
+            <div class="form-group" style="margin-top: 24px;">
+                <label>Username (Read-Only)</label>
+                <input type="text" id="profile-username" class="input-field" disabled>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===================== SETTINGS MODAL ===================== -->
+    <div id="settings-modal" class="modal-overlay hidden">
+        <div class="modal glass-card settings-modal-card">
+            <button class="modal-close" id="settings-close">&times;</button>
+            <div class="modal-title-header">
+                <div class="title-icon">⚙️</div>
+                <h2>Pengaturan Aplikasi</h2>
+                <p class="subtitle">Sesuaikan preferensi Anda untuk pengalaman terbaik.</p>
+            </div>
+            
+            <div class="settings-section">
+                <h3>Preferensi Tampilan & Wilayah</h3>
+                <div class="form-group">
+                    <label>Bahasa</label>
+                    <select class="input-field select-premium">
+                        <option>Bahasa Indonesia</option>
+                        <option>English</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Zona Waktu</label>
+                    <select class="input-field select-premium">
+                        <option>WIB (Jakarta) - UTC+7</option>
+                        <option>WITA (Bali) - UTC+8</option>
+                        <option>WIT (Papua) - UTC+9</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <h3>Notifikasi & Privasi</h3>
+                <div class="setting-toggle-row">
+                    <div class="toggle-info">
+                        <h4>Notifikasi Email</h4>
+                        <p>Terima ringkasan jadwal harian via email.</p>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" checked>
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+                <div class="setting-toggle-row">
+                    <div class="toggle-info">
+                        <h4>Mode Fokus Ketat</h4>
+                        <p>Matikan semua animasi selama jam kerja.</p>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <h3>Integrasi</h3>
+                <div class="setting-toggle-row">
+                    <div class="toggle-info">
+                        <h4>Google Calendar</h4>
+                        <p>Sinkronisasi jadwal untuk 7 hari ke depan.</p>
+                    </div>
+                    <button id="btn-sync-gcal-settings" class="btn btn-primary" style="font-size:12px; padding:6px 12px;">Sync Sekarang</button>
+                </div>
+            </div>
+
+            <button class="btn btn-primary btn-full" style="margin-top: 24px;" id="settings-save">Simpan Pengaturan</button>
+        </div>
+    </div>
+
+    <!-- ===================== AUTH MODAL ===================== -->
+    <div id="auth-overlay" class="auth-overlay">
+        <div class="auth-card">
+            <div class="auth-logo">
+                <span>🌊</span>
+                <h1>FlowMate</h1>
+                <p>Asisten jadwal yang empati.</p>
+            </div>
+
+            <!-- Tab switcher -->
+            <div class="auth-tabs">
+                <button class="auth-tab active" id="tab-login">Masuk</button>
+                <button class="auth-tab" id="tab-register">Daftar</button>
+            </div>
+
+            <!-- Google Sign-In Button -->
+            <div class="google-auth-container" style="display: flex; justify-content: center; margin-bottom: 20px;">
+                <div id="g_id_onload"
+                    data-client_id="849432037168-mc7ntasd097umoko4dbt0t9f9qant7s1.apps.googleusercontent.com"
+                    data-context="signin"
+                    data-ux_mode="popup"
+                    data-callback="handleGoogleLogin"
+                    data-auto_prompt="false">
+                </div>
+                <div class="g_id_signin"
+                    data-type="standard"
+                    data-shape="rectangular"
+                    data-theme="outline"
+                    data-text="signin_with"
+                    data-size="large"
+                    data-logo_alignment="left">
+                </div>
+            </div>
+
+            <div style="text-align: center; color: var(--text-muted); font-size: 13px; margin-bottom: 20px;">ATAU</div>
+
+            <!-- Login Form -->
+            <form id="login-form" class="auth-form" autocomplete="off">
+                <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" id="login-username" class="input-field" placeholder="username kamu" required>
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="login-password" class="input-field" placeholder="••••••••" required>
+                </div>
+                <p id="login-error" class="auth-error hidden"></p>
+                <button type="submit" class="btn btn-primary btn-full" id="login-btn">
+                    <span class="btn-text">Masuk</span>
+                    <span class="btn-loader hidden"></span>
+                </button>
+            </form>
+
+            <!-- Register Form -->
+            <form id="register-form" class="auth-form hidden" autocomplete="off">
+                <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" id="reg-username" class="input-field" placeholder="username unikmu" required>
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="reg-email" class="input-field" placeholder="email@kamu.com" required>
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="reg-password" class="input-field" placeholder="min. 8 karakter" required>
+                </div>
+                <p id="reg-error" class="auth-error hidden"></p>
+                <button type="submit" class="btn btn-primary btn-full" id="reg-btn">
+                    <span class="btn-text">Buat Akun</span>
+                    <span class="btn-loader hidden"></span>
+                </button>
+            </form>
+        </div>
+    </div>
 
     <script src="/static/js/app.js"></script>
 </body>
