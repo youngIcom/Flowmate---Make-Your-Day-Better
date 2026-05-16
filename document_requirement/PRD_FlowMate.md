@@ -64,54 +64,56 @@ FlowMate menjadi jembatan antara ambisi (jadwal) dan realitas manusiawi pengguna
 ---
 
 ## 4. Persyaratan Teknis (Tech Stack)
-Berdasarkan analisis kritis untuk meningkatkan "UX Delight" dan menjamin persistensi data, struktur teknis diperbarui:
-* **Frontend:** Custom Web UI (HTML/CSS/JS, Vite, atau React) - Meninggalkan Streamlit agar desain visual (Dark Mode, Glassmorphism, Micro-animations) bisa terlihat *premium* dan meningkatkan nilai UX secara masif di mata juri.
-* **Backend:** Python (FastAPI) - API modern, sangat cepat, dan cocok untuk memproses logika Python/AI dan meneruskannya ke Frontend.
-* **Database:** Google Cloud Firestore - Database NoSQL ringan untuk persistensi data (Syarat mutlak agar fitur AI Journal & Dashboard bisa berfungsi memori jangka panjang).
-* **AI Engine:** Google AI Studio (Gemini 1.5 Flash / Pro) menggunakan **Structured Outputs (JSON Mode)**.
-* **Integrasi Utama:** Google Calendar API (OAuth 2.0 Flow).
-* **Environment:** Mendukung `DEMO_MODE` (JSON statis) dan `LIVE_MODE` (API asli).
-* **Deployment (Wajib):** Google Cloud Run (di-*containerize* dengan Docker).
+Berdasarkan analisis kritis untuk meningkatkan "UX Delight" dan menjaga kecepatan pengembangan (*rapid prototyping*), struktur teknis telah diimplementasikan sebagai berikut:
+* **Frontend:** Custom Web UI (Vanilla HTML/CSS/JS) - Dirancang dari awal dengan desain visual *premium* (Dark Mode, Glassmorphism, Responsive Mobile UI) untuk pengalaman yang instan dan mulus tanpa framework berat.
+* **Backend:** Python (FastAPI) - API modern dan sangat cepat, memproses logika AI dan menyajikan file statis (Frontend).
+* **Database:** SQLite (Relational DB) menggunakan SQLAlchemy - Menggantikan rencana awal Firestore demi kemudahan *deployment* mandiri (*self-contained*), menjaga privasi data pengujian tetap lokal, dan meminimalkan kompleksitas konfigurasi *cloud storage* pada *container* Cloud Run.
+* **AI Engine:** Google AI Studio (Gemini 1.5 Flash) menggunakan **Structured Outputs (JSON Mode)**.
+* **Integrasi Utama:** Google OAuth 2.0 (Google Identity Services) dan Google Calendar API.
+* **Environment:** Mendukung `DEMO_MODE` (JSON statis) dan `LIVE_MODE` (API asli & Database).
+* **Deployment:** Google Cloud Run (Di-*containerize* dengan Docker).
 
 ---
 
 ## 5. Arsitektur & Alur Data (Data Flow)
-1. **Trigger:** User menginput kondisi via Custom Frontend.
-2. **Fetch:** FastAPI Backend menerima request, memanggil Google Calendar API untuk mengambil *events* JSON, dan mengambil riwayat user dari Firestore.
-3. **Prompt Construction:** Backend merakit (User Input + GCal Events JSON + Riwayat Firestore + System Prompt).
-4. **AI Processing:** Dikirim ke Gemini API (Google AI Studio).
+1. **Trigger:** User menginput kondisi (Check-in, Panic Button, atau Jurnal) via antarmuka Frontend.
+2. **Fetch & Auth:** Frontend melakukan *Login* via Google Identity (Popup) dan mengambil Token. Backend memverifikasi Token, mengambil *events* JSON dari GCal (7 hari ke depan), dan menarik riwayat user dari SQLite.
+3. **Prompt Construction:** Backend merakit (User Input + GCal Events JSON + Riwayat Jurnal/Checkin + System Prompt).
+4. **AI Processing:** Dikirim ke Gemini API (Google AI Studio) secara *asynchronous*.
 5. **JSON Response:** Gemini mengembalikan *New Schedule* + *Reasoning Transcript*.
-6. **Approval:** Frontend menganimasikan *Before vs After* kalender dan menampilkan penalaran AI. User meng-klik "Approve".
-7. **Sync:** Backend melakukan `PATCH` ke GCal API dan menyimpan riwayat check-in ke Firestore.
+6. **Approval:** Frontend menganimasikan *Before vs After* kalender dan menampilkan penalaran AI.
+7. **Sync:** (Rencana sinkronisasi 2-arah ditahan untuk keamanan demo, saat ini kalender baru disimulasikan secara visual). Riwayat Check-in, Jurnal, dan Event Metrik disimpan ke SQLite.
 
 ---
 
-## 6. Risiko & Strategi Mitigasi (Kompetisi)
-* **Risiko UX Kaku (Streamlit Penalty):** *Mitigasi* -> Menggunakan Custom Frontend dengan animasi visual (*Visual Diff*) agar juri merasakan antarmuka yang benar-benar dipoles (*polished*).
-* **Risiko Fitur Jurnal/Dashboard Tanpa Memori:** *Mitigasi* -> Penggunaan Google Cloud Firestore agar AI memiliki konteks masa lalu pengguna, bukan hanya sesi saat ini.
-* **Risiko Presentasi Video Membosankan:** *Mitigasi* -> Fokus video pada momen "Jadwalku Berantakan -> Satu Klik -> Kalender Rapi + AI Menjelaskan Alasannya". Demo diarahkan layaknya film pahlawan penyelamat jadwal.
-* **Risiko Demo API Gagal:** *Mitigasi* -> Menggunakan data JSON offline (`DEMO_MODE`) saat rekaman video agar 100% aman dari limit API atau masalah *auth*.
+## 6. Risiko & Mitigasi (Evaluasi Aktual)
+* **Risiko UX Kaku:** *Telah dimitigasi* -> Penggunaan antarmuka kustom (HTML/CSS) terbukti memberikan hasil yang jauh lebih *Wow* dan interaktif (Sidebar responsif, *Glassmorphism*, dukungan iOS/Android) dibandingkan Streamlit.
+* **Risiko Persistensi Data:** *Telah dimitigasi* -> Implementasi SQLite + SQLAlchemy berhasil menyimpan *state* dari Jurnal dan Check-in, memungkinkan analisis historis untuk metrik *Dashboard*.
+* **Risiko Limit API/Verifikasi Google:** *Telah dimitigasi* -> Aplikasi menggunakan mode Test Users di Google Cloud Console untuk mem-*bypass* proses verifikasi ketat (*unverified app warning*), ideal untuk skenario kompetisi.
+* **Risiko Demo Gagal:** *Telah dimitigasi* -> Telah disediakan fallback `demoCalendar` dan variabel `.env` untuk demonstrasi offline yang mulus.
 
 ---
 
-## 7. Fase Eksekusi & Ruang Lingkup MVP
-Meskipun target implementasi 4 fitur sangat ambisius dalam sisa waktu (2 minggu), kita tetap berkomitmen penuh untuk menyelesaikannya.
+## 7. Fase Eksekusi (Status Penyelesaian)
+Seluruh MVP telah selesai dikerjakan dalam waktu rekor.
 
-### Fase 1: FastAPI Core Engine & Prompting
-* [ ] Eksperimen *System Prompt* JSON di Google AI Studio (Mendapatkan JSON Kalender Baru + *Reasoning Transcript*).
-* [ ] Setup FastAPI backend dan implementasi `DEMO_MODE` (pembacaan JSON lokal).
-* [ ] Setup Google Cloud Firestore untuk database riwayat jurnal.
+### Fase 1: FastAPI Core Engine & Prompting (Selesai ✅)
+* [x] Eksperimen *System Prompt* JSON di Google AI Studio (Mendapatkan JSON Kalender Baru + *Reasoning Transcript*).
+* [x] Setup FastAPI backend dan implementasi *routing* API.
+* [x] Setup Relational Database (SQLite + SQLAlchemy) untuk menyimpan *Users*, *Events*, *Journal*, dan *Check-in*.
 
-### Fase 2: Premium Custom Frontend & Panic Button
-* [ ] Membangun antarmuka web modern (UI kustom).
-* [ ] Membuat animasi *Before/After Visualizer* dan komponen Transkrip AI.
-* [ ] Menyambungkan Frontend ke FastAPI Backend.
+### Fase 2: Premium Custom Frontend & Panic Button (Selesai ✅)
+* [x] Membangun antarmuka web modern (UI kustom *Dark/Light mode*).
+* [x] Membuat animasi *Before/After Visualizer* dan komponen Transkrip AI.
+* [x] Menyambungkan Frontend ke FastAPI Backend secara dinamis (AJAX).
+* [x] Optimasi tata letak perangkat seluler (*Mobile Responsiveness* & *Scroll Fix*).
 
-### Fase 3: Integrasi Eksternal & Fitur Pelengkap
-* [ ] Implementasi Autentikasi OAuth2 untuk Google Calendar API (`LIVE_MODE`).
-* [ ] Pengerjaan fitur Morning Check-in, AI Journal, dan Dashboard (menarik data dari Firestore).
+### Fase 3: Integrasi Eksternal & Fitur Pelengkap (Selesai ✅)
+* [x] Implementasi Autentikasi OAuth2 (Google Identity Services) di Frontend dan verifikasi *token* di Backend.
+* [x] Sinkronisasi Google Calendar API (Menarik jadwal 7 hari ke depan).
+* [x] Pengerjaan fitur Morning Check-in, AI Journal, dan Dashboard (visualisasi statistik).
 
-### Fase 4: Polishing & Deployment
-* [ ] Dockerisasi FastAPI backend dan Frontend.
-* [ ] Deploy ke Google Cloud Run.
-* [ ] Rekaman Video Demo sinematik (2 menit).
+### Fase 4: Polishing & Deployment (Sedang Berjalan ⏳)
+* [x] Dockerisasi FastAPI backend dan Frontend (`Dockerfile` & `docker-compose.yml`).
+* [x] Deploy ke Google Cloud Run (URL Publik telah *live*).
+* [ ] Rekaman Video Demo sinematik (2 menit) berdasarkan skenario "Penyelamat Jadwal".
