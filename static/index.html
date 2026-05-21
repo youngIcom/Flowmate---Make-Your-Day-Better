@@ -3,597 +3,466 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="FlowMate — Asisten penjadwalan berempati yang melindungi energi dan kesehatan mentalmu.">
-    <title>FlowMate — Empathic AI Scheduler</title>
+    <meta name="description" content="FlowMate adalah schedule debugger untuk mahasiswa yang harinya sudah kacau dan butuh recovery plan realistis.">
+    <meta name="theme-color" content="#56d4c8">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="FlowMate">
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+    <title>FlowMate | Schedule Debugger</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-    <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js'></script>
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
-    <!-- ===================== SIDEBAR NAV ===================== -->
-    <nav id="sidebar">
-        <div class="sidebar-logo">
-            <span class="logo-icon">🌊</span>
-            <span class="logo-text">FlowMate</span>
-        </div>
-        <ul class="nav-links">
-            <li>
-                <button class="nav-btn active" data-page="home" id="nav-home">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-                    <span>Home</span>
-                </button>
-            </li>
-            <li>
-                <button class="nav-btn" data-page="checkin" id="nav-checkin">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                    <span>Check-in</span>
-                </button>
-            </li>
-            <li>
-                <button class="nav-btn" data-page="journal" id="nav-journal">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                    <span>Journal</span>
-                </button>
-            </li>
-            <li>
-                <button class="nav-btn" data-page="dashboard" id="nav-dashboard">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
-                    <span>Dashboard</span>
-                </button>
-            </li>
-        </ul>
-        <div class="sidebar-footer">
-            <div class="mode-badge" id="mode-badge">🧪 DEMO</div>
-        </div>
-    </nav>
-
-    <!-- ===================== GLOBAL HEADER ===================== -->
-    <header id="global-header">
-        <div class="gh-left">
-            <button id="mobile-menu-btn" class="mobile-menu-btn hidden" aria-label="Menu">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-            </button>
-            <div class="gh-greeting">
-                <h2 id="greeting">Selamat Pagi 👋</h2>
-                <p class="subtitle" id="date-display">Loading...</p>
-            </div>
-        </div>
-        <div class="gh-center">
-            <div class="search-box gh-search">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="search-icon"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                <input type="text" placeholder="Search events..." class="gh-search-input">
-            </div>
-        </div>
-        <div class="gh-right">
-            <button id="btn-add-event" class="btn btn-primary gh-add-btn">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                <span class="btn-text">Add Event</span>
-            </button>
-            <button id="theme-toggle" class="theme-toggle-btn" aria-label="Toggle Theme">
-                <span class="theme-icon-light" title="Switch to Light Mode">☀️</span>
-                <span class="theme-icon-dark hidden" title="Switch to Dark Mode">🌙</span>
-            </button>
-            <div class="user-menu-container">
-                <button id="user-menu-btn" class="user-avatar">
-                    <span id="user-avatar-initial">U</span>
-                </button>
-                <div id="user-dropdown" class="user-dropdown hidden">
-                    <div class="dropdown-header">
-                        <span id="dropdown-username" style="font-weight: 700; display: block;">Username</span>
-                        <span id="dropdown-email" style="font-size: 12px; color: var(--text-muted);">email@example.com</span>
-                    </div>
-                    <ul class="dropdown-list">
-                        <li><button id="btn-profile"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> Profile</button></li>
-                        <li><button id="btn-settings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> Settings</button></li>
-                        <li><button id="btn-sync-gcal-menu"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21v-5h5"/></svg> Sync GCal</button></li>
-                        <li class="divider"></li>
-                        <li><button id="btn-logout" style="color: var(--accent-danger);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg> Logout</button></li>
-                    </ul>
-                </div>
-            </div>
-        </div>
-    </header>
-
-    <!-- ===================== MAIN CONTENT ===================== -->
-    <main id="main-content">
-
-        <!-- ============ HOME PAGE ============ -->
-        <section id="page-home" class="page active">
-            <div class="dashboard-layout">
-                <!-- Left Sidebar (Inner) -->
-                <aside class="dashboard-sidebar">
-                    <div class="mini-calendar">
-                        <h4 style="text-align: center; margin-bottom: 12px;">May 2026</h4>
-                        <div class="mini-cal-grid">
-                            <span class="muted">S</span><span class="muted">M</span><span class="muted">T</span><span class="muted">W</span><span class="muted">T</span><span class="muted">F</span><span class="muted">S</span>
-                            <span class="muted">26</span><span class="muted">27</span><span class="muted">28</span><span class="muted">29</span><span class="muted">30</span><span class="muted">1</span><span>2</span>
-                            <span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span>
-                            <span>10</span><span>11</span><span>12</span><span>13</span><span>14</span><span class="active">16</span><span>17</span>
-                            <span>18</span><span>19</span><span>20</span><span>21</span><span>22</span><span>23</span><span>24</span>
-                            <span>25</span><span>26</span><span>27</span><span>28</span><span>29</span><span>30</span><span>31</span>
-                            <span class="muted">1</span><span class="muted">2</span><span class="muted">3</span><span class="muted">4</span><span class="muted">5</span><span class="muted">6</span><span class="muted">7</span>
-                        </div>
-                    </div>
-
-                    <div class="todo-list">
-                        <div class="todo-header">
-                            <h4>My To Do List</h4>
-                            <button class="btn-icon" id="todo-add-btn" title="Tambah tugas baru">+</button>
-                        </div>
-                        <div id="todo-input-row" class="todo-input-row hidden">
-                            <input type="text" id="todo-new-input" class="gh-search-input" placeholder="Tulis tugas baru...">
-                            <button id="todo-save-btn" class="btn btn-primary" style="padding: 6px 14px; font-size: 12px;">Simpan</button>
-                        </div>
-                        <div id="todo-items" class="todo-items-scroll">
-                            <!-- Dynamically populated by JS -->
-                        </div>
-                    </div>
-
-                    <!-- Panic Button in Sidebar -->
-                    <button id="panic-btn" class="panic-btn-sidebar" aria-label="Jadwalku Berantakan">
-                        <span class="panic-btn-icon">🚨</span>
-                        <span class="panic-btn-label">Jadwalku Berantakan</span>
-                    </button>
-                </aside>
-
-                <!-- Main Content Area -->
-                <div class="dashboard-main">
-                    <div class="card" id="schedule-card" style="margin-bottom: 0; padding: 16px;">
-                        <div id="calendar-view"></div>
-                        <div class="timeline hidden" id="timeline-today"></div>
+    <div class="app-shell">
+        <aside class="sidebar" id="sidebar">
+            <div>
+                <div class="brand-block">
+                    <div class="brand-mark">FM</div>
+                    <div>
+                        <div class="brand-name">FlowMate</div>
+                        <div class="brand-tag">Schedule Debugger</div>
                     </div>
                 </div>
+                <nav class="nav-stack">
+                    <button class="nav-btn active" data-page="home">Debugger</button>
+                    <button class="nav-btn" data-page="checkin">Morning Check-in</button>
+                    <button class="nav-btn" data-page="journal">Journal</button>
+                    <button class="nav-btn" data-page="dashboard">Dashboard</button>
+                </nav>
             </div>
-            <!-- Event Detail Popup -->
-            <div id="event-popup" class="event-popup hidden" role="dialog" aria-modal="true">
-                <div class="event-popup-card">
-                    <div class="event-popup-header">
-                        <div class="event-popup-title-group">
-                            <span class="event-popup-dot" id="popup-dot"></span>
-                            <h3 class="event-popup-title" id="popup-title">Event Title</h3>
-                        </div>
-                        <button class="event-popup-close" id="popup-close">&times;</button>
-                    </div>
-                    <div class="event-popup-body">
-                        <div class="event-popup-row">
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                            <span id="popup-time">08:00 – 09:00</span>
-                        </div>
-                        <div class="event-popup-row">
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
-                            <span id="popup-priority">Medium</span>
-                        </div>
-                    </div>
-                    <div class="event-popup-footer">
-                        <button class="popup-action-btn popup-edit-btn" id="popup-edit-btn">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                            Edit
-                        </button>
-                        <button class="popup-action-btn popup-delete-btn" id="popup-delete-btn">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-                            Hapus
-                        </button>
-                    </div>
+
+            <div class="sidebar-footer">
+                <div class="mode-chip" id="mode-badge">DEMO MODE</div>
+                <p class="sidebar-note">Not another calendar. A recovery engine for chaotic days.</p>
+            </div>
+        </aside>
+
+        <div class="main-shell">
+            <header class="topbar">
+                <button class="icon-btn mobile-only" id="mobile-menu-btn" aria-label="Open menu">☰</button>
+                <div>
+                    <p class="eyebrow">FlowMate PRD v2</p>
+                    <h1 class="topbar-title">Your day crashed. FlowMate can patch it.</h1>
                 </div>
-            </div>
-
-            <!-- Add Event Modal -->
-            <div id="add-event-modal" class="modal-overlay hidden">
-                <div class="modal glass-card">
-                    <button class="modal-close" id="add-event-close">&times;</button>
-                    <h2>📅 Tambah Kegiatan</h2>
-                    <div class="form-group" style="margin-top: 16px;">
-                        <label for="event-title">Nama Kegiatan</label>
-                        <input type="text" id="event-title" class="input-field" placeholder="Contoh: Rapat BEM">
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="event-start">Waktu Mulai</label>
-                            <input type="time" id="event-start" class="input-field">
-                        </div>
-                        <div class="form-group">
-                            <label for="event-end">Waktu Selesai</label>
-                            <input type="time" id="event-end" class="input-field">
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label for="event-priority">Prioritas</label>
-                        <select id="event-priority">
-                            <option value="high">🔴 Tinggi (High)</option>
-                            <option value="medium" selected>🟡 Sedang (Medium)</option>
-                            <option value="low">🟢 Rendah (Low)</option>
-                        </select>
-                    </div>
-                    <div class="form-group" style="display:flex; align-items:center; gap: 8px;">
-                        <input type="checkbox" id="event-immovable">
-                        <label for="event-immovable" style="margin-bottom:0; cursor:pointer;">Wajib (Tidak bisa digeser AI)</label>
-                    </div>
-                    <button id="add-event-submit" class="btn btn-primary btn-full">
-                        <span class="btn-text">Simpan Jadwal</span>
-                        <span class="btn-loader hidden"></span>
-                    </button>
+                <div class="topbar-actions">
+                    <span class="status-text" id="date-display"></span>
+                    <button class="ghost-btn" id="theme-toggle">Toggle Theme</button>
+                    <button class="primary-btn" id="btn-add-event">Add Event</button>
+                    <button class="ghost-btn" id="auth-action-btn">Masuk</button>
                 </div>
-            </div>
+            </header>
 
-
-
-            <!-- Panic Modal -->
-            <div id="panic-modal" class="modal-overlay hidden">
-                <div class="modal glass-card">
-                    <button class="modal-close" id="panic-modal-close">&times;</button>
-                    <h2>🚨 Rescue Mode</h2>
-                    <p class="modal-subtitle">Tenang, ceritakan kondisimu sekarang.</p>
-                    <div class="form-group">
-                        <label for="panic-message">Apa yang terjadi?</label>
-                        <textarea id="panic-message" rows="3" placeholder='Contoh: "Aku ketiduran, baru bangun jam 12. Energiku sisa 40%..."'></textarea>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="panic-energy">Level Energi</label>
-                            <div class="slider-wrapper">
-                                <input type="range" id="panic-energy" min="1" max="10" value="4">
-                                <span class="slider-value" id="panic-energy-val">4</span>
+            <main class="content-area">
+                <section class="page active" id="page-home">
+                    <section class="hero-card">
+                        <div>
+                            <p class="eyebrow">Schedule Debugger Edition</p>
+                            <h2>Harimu crash? FlowMate bantu patch jadwalmu.</h2>
+                            <p class="hero-copy">FlowMate mendeteksi konflik, membaca energi, melindungi event wajib, lalu menghasilkan recovery plan yang masih bisa kamu jalankan hari ini.</p>
+                        </div>
+                        <div class="hero-stats">
+                            <div class="stat-tile">
+                                <span class="stat-label">Damage Level</span>
+                                <strong id="metric-damage">--</strong>
+                            </div>
+                            <div class="stat-tile">
+                                <span class="stat-label">Before</span>
+                                <strong id="metric-before">--</strong>
+                            </div>
+                            <div class="stat-tile">
+                                <span class="stat-label">After</span>
+                                <strong id="metric-after">--</strong>
+                            </div>
+                            <div class="stat-tile">
+                                <span class="stat-label">Recovered</span>
+                                <strong id="metric-recovered">0</strong>
                             </div>
                         </div>
-                        <div class="form-group">
-                            <label for="panic-mood">Mood</label>
-                            <select id="panic-mood">
-                                <option value="exhausted">😵 Exhausted</option>
-                                <option value="stressed">😰 Stressed</option>
-                                <option value="okay">😐 Okay</option>
-                                <option value="good">😊 Good</option>
-                            </select>
+                    </section>
+
+                    <section class="workspace-grid">
+                        <article class="panel schedule-panel">
+                            <div class="panel-header">
+                                <div>
+                                    <p class="panel-kicker">Before</p>
+                                    <h3>Broken Day Timeline</h3>
+                                </div>
+                                <span class="panel-tag">Today</span>
+                            </div>
+                            <div class="timeline-list" id="timeline-before"></div>
+                            <div class="legend-row">
+                                <span class="legend-pill legend-danger">Missed / Conflict</span>
+                                <span class="legend-pill legend-warning">Risky</span>
+                                <span class="legend-pill legend-muted">Optional</span>
+                            </div>
+                        </article>
+
+                        <article class="panel control-panel">
+                            <div class="panel-header">
+                                <div>
+                                    <p class="panel-kicker">Debug Input</p>
+                                    <h3>Rescue Console</h3>
+                                </div>
+                                <span class="panel-tag mono" id="auth-state">guest/demo</span>
+                            </div>
+
+                            <label class="field-label" for="rescue-message">Ceritakan pelan-pelan, ada apa?</label>
+                            <div class="textarea-row">
+                                <textarea id="rescue-message" class="command-input" rows="6" placeholder="Contoh: Aku baru bangun jam 12, rasanya capek banget. Kelas jam 2 wajib hadir. Tugas robotika deadline malam ini. Gym kayaknya harus dilewatin dulu..."></textarea>
+                                <button id="voice-rescue-btn" class="mic-btn" aria-label="Voice input" title="Klik untuk bicara">
+                                    <span class="mic-icon">🎤</span>
+                                </button>
+                            </div>
+
+                            <div class="form-grid two-col">
+                                <div>
+                                    <label class="field-label" for="rescue-energy">Level energi</label>
+                                    <input type="range" id="rescue-energy" min="1" max="10" value="4">
+                                    <div class="range-hint"><span>1</span><strong id="rescue-energy-value">4</strong><span>10</span></div>
+                                </div>
+                                <div>
+                                    <label class="field-label" for="rescue-mood">Mood</label>
+                                    <select id="rescue-mood" class="select-field">
+                                        <option value="overwhelmed">Overwhelmed</option>
+                                        <option value="tired">Tired</option>
+                                        <option value="stressed">Stressed</option>
+                                        <option value="okay">Okay</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="button-row">
+                                <button id="rescue-submit" class="primary-btn wide-btn">
+                                    <span class="btn-text">Debug My Day</span>
+                                    <span class="btn-loader hidden"></span>
+                                </button>
+                                <button id="reset-demo-btn" class="ghost-btn">Reset Demo Data</button>
+                            </div>
+
+                            <div class="system-box">
+                                <div class="system-box-header">
+                                    <span>System Log</span>
+                                    <span class="mono" id="processing-mode">idle</span>
+                                </div>
+                                <ul class="system-log" id="debug-trace">
+                                    <li>Detecting conflicts...</li>
+                                    <li>Analyzing energy budget...</li>
+                                    <li>Protecting fixed events...</li>
+                                    <li>Waiting for rescue command.</li>
+                                </ul>
+                            </div>
+                        </article>
+
+                        <article class="panel result-panel">
+                            <div class="panel-header">
+                                <div>
+                                    <p class="panel-kicker">After</p>
+                                    <h3>Patched Timeline</h3>
+                                </div>
+                                <span class="panel-tag success">Draft</span>
+                            </div>
+                            <div class="timeline-list" id="timeline-after"></div>
+                            <div class="result-copy-block">
+                                <h4>AI Decision Log</h4>
+                                <ul class="decision-list" id="decision-log-list">
+                                    <li>Belum ada recovery plan. Jalankan <span class="mono">Debug My Day</span> untuk melihat patch notes.</li>
+                                </ul>
+                            </div>
+                        </article>
+                    </section>
+
+                    <section class="panel summary-panel hidden" id="rescue-result">
+                        <div class="panel-header">
+                            <div>
+                                <p class="panel-kicker">Patch Summary</p>
+                                <h3 id="summary-title">Schedule patched successfully</h3>
+                            </div>
+                            <span class="panel-tag mono" id="session-mode">demo</span>
+                        </div>
+
+                        <div class="summary-grid">
+                            <div>
+                                <p class="summary-label">Ringkasan</p>
+                                <p class="summary-text" id="summary-text"></p>
+                            </div>
+                            <div>
+                                <p class="summary-label">Energy Assessment</p>
+                                <p class="summary-text" id="energy-text"></p>
+                            </div>
+                            <div>
+                                <p class="summary-label">Schedule Actions</p>
+                                <ul class="action-list" id="schedule-actions-list"></ul>
+                            </div>
+                            <div>
+                                <p class="summary-label">Risk Flags</p>
+                                <ul class="risk-list" id="risk-flags"></ul>
+                            </div>
+                        </div>
+
+                        <div class="button-row summary-actions sticky-approval">
+                            <button id="approve-btn" class="primary-btn">✅ Jadwal Ini Terlihat Lebih Baik</button>
+                            <button id="undo-btn" class="ghost-btn hidden">↩ Undo Perubahan</button>
+                            <button id="reject-btn" class="ghost-btn">Buang Draft Ini</button>
+                        </div>
+                    </section>
+                </section>
+
+                <section class="page" id="page-checkin">
+                    <div class="page-intro">
+                        <p class="eyebrow">Morning Check-in</p>
+                        <h2>Kurangi kemungkinan harimu rusak sejak pagi.</h2>
+                    </div>
+                    <div class="split-grid">
+                        <article class="panel">
+                            <div class="form-grid two-col">
+                                <div>
+                                    <label class="field-label" for="ci-sleep">Jam tidur</label>
+                                    <input type="range" id="ci-sleep" min="1" max="12" step="0.5" value="6">
+                                    <div class="range-hint"><span>1h</span><strong id="ci-sleep-val">6</strong><span>12h</span></div>
+                                </div>
+                                <div>
+                                    <label class="field-label" for="ci-wake">Jam bangun</label>
+                                    <input type="time" id="ci-wake" class="input-field" value="07:00">
+                                </div>
+                            </div>
+                            <div class="form-grid two-col">
+                                <div>
+                                    <label class="field-label" for="ci-energy">Energi</label>
+                                    <input type="range" id="ci-energy" min="1" max="10" value="6">
+                                    <div class="range-hint"><span>1</span><strong id="ci-energy-val">6</strong><span>10</span></div>
+                                </div>
+                                <div>
+                                    <label class="field-label" for="ci-mood">Mood</label>
+                                    <select id="ci-mood" class="select-field">
+                                        <option value="energetic">Energetic</option>
+                                        <option value="calm">Calm</option>
+                                        <option value="neutral" selected>Neutral</option>
+                                        <option value="tired">Tired</option>
+                                        <option value="stressed">Stressed</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <label class="field-label" for="ci-priority">Top priority hari ini</label>
+                            <input type="text" id="ci-priority" class="input-field" placeholder="Contoh: selesaikan tugas robotika sebelum malam">
+                            <button id="checkin-submit" class="primary-btn wide-btn">
+                                <span class="btn-text">Run Morning Check-in</span>
+                                <span class="btn-loader hidden"></span>
+                            </button>
+                        </article>
+                        <article class="panel" id="checkin-result">
+                            <div class="empty-state-block empathic-empty">
+                                <span class="empty-icon">🌅</span>
+                                <h3>Selamat pagi!</h3>
+                                <p>Isi form di sebelah kiri untuk memulai harimu dengan lebih tenang. FlowMate akan menyesuaikan jadwalmu berdasarkan energi dan prioritasmu pagi ini.</p>
+                            </div>
+                        </article>
+                    </div>
+                </section>
+
+                <section class="page" id="page-journal">
+                    <div class="page-intro">
+                        <p class="eyebrow">Empathic AI Journal</p>
+                        <h2>Tulis hambatan, pencapaian, dan pola energimu.</h2>
+                    </div>
+                    <div class="split-grid journal-grid">
+                        <article class="panel">
+                            <label class="field-label" for="journal-text">Jurnal hari ini</label>
+                            <div class="textarea-row">
+                                <textarea id="journal-text" class="command-input journal-input" rows="10" placeholder="Pikiranmu sedang penuh? Tuangkan apa pun yang terasa berat hari ini di sini. Tidak ada jawaban yang salah..."></textarea>
+                                <button id="voice-journal-btn" class="mic-btn" aria-label="Voice input journal" title="Klik untuk bicara">
+                                    <span class="mic-icon">🎤</span>
+                                </button>
+                            </div>
+                            <button id="journal-submit" class="primary-btn wide-btn">
+                                <span class="btn-text">Simpan & Analisis Jurnalku</span>
+                                <span class="btn-loader hidden"></span>
+                            </button>
+                            <div class="journal-insight hidden" id="journal-insight">
+                                <h3>Insight</h3>
+                                <div id="insight-content"></div>
+                            </div>
+                        </article>
+                        <article class="panel">
+                            <div class="panel-header">
+                                <div>
+                                    <p class="panel-kicker">History</p>
+                                    <h3>Recent Entries</h3>
+                                </div>
+                            </div>
+                            <div class="journal-history" id="journal-history">
+                                <div class="empty-state-block empathic-empty">
+                                    <span class="empty-icon">📝</span>
+                                    <h3>Belum ada catatan</h3>
+                                    <p>Mulai tulis satu hal kecil yang kamu rasakan hari ini. Menulis adalah langkah pertama untuk memahami polamu.</p>
+                                </div>
+                            </div>
+                        </article>
+                    </div>
+                </section>
+
+                <section class="page" id="page-dashboard">
+                    <div class="page-intro">
+                        <p class="eyebrow">Recovery Metrics</p>
+                        <h2>Lihat apakah FlowMate benar-benar menyelamatkan harimu.</h2>
+                    </div>
+                    <div class="stats-grid dashboard-stats">
+                        <div class="stat-tile large">
+                            <span class="stat-label">Rescue Sessions</span>
+                            <strong id="stat-rescues">0</strong>
+                        </div>
+                        <div class="stat-tile large">
+                            <span class="stat-label">Check-ins</span>
+                            <strong id="stat-checkins">0</strong>
+                        </div>
+                        <div class="stat-tile large">
+                            <span class="stat-label">Avg Energy</span>
+                            <strong id="stat-energy">0</strong>
+                        </div>
+                        <div class="stat-tile large">
+                            <span class="stat-label">Fixed Preserved</span>
+                            <strong id="stat-preservation">0%</strong>
                         </div>
                     </div>
-                    <button id="panic-submit" class="btn btn-danger btn-full">
-                        <span class="btn-text">⚡ Rescue Jadwalku</span>
-                        <span class="btn-loader hidden"></span>
-                    </button>
-                </div>
-            </div>
-
-            <!-- Result Section (Before/After) -->
-            <div id="rescue-result" class="hidden">
-                <div class="card empathy-card">
-                    <p id="empathy-message" class="empathy-text"></p>
-                </div>
-                <div class="diff-container">
-                    <div class="diff-column">
-                        <h3 class="diff-title diff-before">❌ Sebelum</h3>
-                        <div class="timeline" id="timeline-before"></div>
+                    <article class="panel weekly-insight-panel" id="weekly-insight-panel">
+                        <div class="panel-header">
+                            <div>
+                                <p class="panel-kicker">7 Hari Terakhir</p>
+                                <h3>Weekly Insight</h3>
+                            </div>
+                            <button class="ghost-btn" id="load-weekly-insight-btn">
+                                <span class="btn-text">Load Insight</span>
+                                <span class="btn-loader hidden"></span>
+                            </button>
+                        </div>
+                        <div id="weekly-insight-content" class="empty-state-block empathic-empty">
+                            <span class="empty-icon">📊</span>
+                            <h3>Insight mingguan belum dimuat</h3>
+                            <p>Klik <strong>Load Insight</strong> untuk melihat pola energi dan blocker yang berulang minggu ini.</p>
+                        </div>
+                    </article>
+                    <div class="ai-insight-callout" id="dashboard-ai-callout">
+                        <span class="callout-icon">💡</span>
+                        <p id="dashboard-ai-text">Jalankan beberapa rescue session dan tulis jurnal untuk mendapatkan insight personal dari FlowMate AI.</p>
                     </div>
-                    <div class="diff-arrow">→</div>
-                    <div class="diff-column">
-                        <h3 class="diff-title diff-after">✅ Sesudah</h3>
-                        <div class="timeline" id="timeline-after"></div>
+                    <div class="split-grid dashboard-grid">
+                        <article class="panel chart-panel">
+                            <div class="panel-header">
+                                <div>
+                                    <p class="panel-kicker">Trend</p>
+                                    <h3>Energy vs Session History</h3>
+                                </div>
+                            </div>
+                            <div class="chart-box"><canvas id="energy-chart"></canvas></div>
+                        </article>
+                        <article class="panel chart-panel">
+                            <div class="panel-header">
+                                <div>
+                                    <p class="panel-kicker">Mood</p>
+                                    <h3>Common Emotional State</h3>
+                                </div>
+                            </div>
+                            <div class="chart-box"><canvas id="mood-chart"></canvas></div>
+                        </article>
                     </div>
-                </div>
-                <!-- Reasoning Transcript -->
-                <div class="card reasoning-card">
-                    <button class="reasoning-toggle" id="reasoning-toggle">
-                        🧠 Alasan FlowMate <span class="chevron">▼</span>
-                    </button>
-                    <div class="reasoning-body" id="reasoning-body">
-                        <ul id="reasoning-list"></ul>
-                    </div>
-                </div>
-                <!-- Daily Tip -->
-                <div class="card tip-card">
-                    <p id="daily-tip"></p>
-                </div>
-                <!-- Approve Button -->
-                <div class="approve-section">
-                    <button id="approve-btn" class="btn btn-success btn-full">
-                        ✅ Terapkan Jadwal Baru
-                    </button>
-                    <button id="reject-btn" class="btn btn-ghost btn-full">
-                        Batalkan
-                    </button>
-                </div>
-            </div>
-        </section>
-
-        <!-- ============ CHECK-IN PAGE ============ -->
-        <section id="page-checkin" class="page">
-            <header class="page-header">
-                <h1>☀️ Mood Check-in</h1>
-                <p class="subtitle">Bagaimana tidurmu semalam?</p>
-            </header>
-            <div class="card glass-card">
-                <div class="form-group">
-                    <label for="ci-sleep">Jam Tidur (jam)</label>
-                    <div class="slider-wrapper">
-                        <input type="range" id="ci-sleep" min="1" max="12" value="6" step="0.5">
-                        <span class="slider-value" id="ci-sleep-val">6</span>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label for="ci-wake">Jam Bangun</label>
-                    <input type="time" id="ci-wake" value="07:00" class="input-field">
-                </div>
-                <div class="form-group">
-                    <label for="ci-energy">Level Energi</label>
-                    <div class="energy-bubbles" id="ci-energy-bubbles">
-                        <button class="energy-bubble" data-value="1">1</button>
-                        <button class="energy-bubble" data-value="2">2</button>
-                        <button class="energy-bubble" data-value="3">3</button>
-                        <button class="energy-bubble" data-value="4">4</button>
-                        <button class="energy-bubble" data-value="5">5</button>
-                        <button class="energy-bubble active" data-value="6">6</button>
-                        <button class="energy-bubble" data-value="7">7</button>
-                        <button class="energy-bubble" data-value="8">8</button>
-                        <button class="energy-bubble" data-value="9">9</button>
-                        <button class="energy-bubble" data-value="10">10</button>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>Mood Pagi Ini</label>
-                    <div class="mood-selector" id="ci-mood-selector">
-                        <button class="mood-btn" data-mood="energetic">🔥 Berenergi</button>
-                        <button class="mood-btn" data-mood="calm">😌 Tenang</button>
-                        <button class="mood-btn active" data-mood="neutral">😐 Biasa</button>
-                        <button class="mood-btn" data-mood="tired">😴 Ngantuk</button>
-                        <button class="mood-btn" data-mood="stressed">😰 Cemas</button>
-                    </div>
-                </div>
-                <button id="checkin-submit" class="btn btn-primary btn-full">
-                    <span class="btn-text">☀️ Sesuaikan Jadwalku</span>
-                    <span class="btn-loader hidden"></span>
-                </button>
-            </div>
-            <div id="checkin-result" class="hidden"></div>
-        </section>
-
-        <!-- ============ JOURNAL PAGE ============ -->
-        <section id="page-journal" class="page">
-            <header class="page-header">
-                <h1>📝 AI Journal</h1>
-                <p class="subtitle">Tulis apapun yang ada di pikiranmu.</p>
-            </header>
-            <div class="card glass-card">
-                <textarea id="journal-text" rows="6" class="journal-textarea" placeholder="Hari ini aku merasa... / Hal yang bikin aku stuck hari ini adalah..."></textarea>
-                <button id="journal-submit" class="btn btn-primary btn-full">
-                    <span class="btn-text">📝 Simpan & Analisis</span>
-                    <span class="btn-loader hidden"></span>
-                </button>
-            </div>
-            <!-- Journal Insight -->
-            <div id="journal-insight" class="hidden">
-                <div class="card insight-card">
-                    <h3>🔮 Analisis FlowMate</h3>
-                    <div id="insight-content"></div>
-                </div>
-            </div>
-            <!-- Past Entries -->
-            <div class="card" id="journal-history-card">
-                <h3>📚 Jurnal Sebelumnya</h3>
-                <div id="journal-history">
-                    <p class="empty-state">Belum ada jurnal yang ditulis.</p>
-                </div>
-            </div>
-        </section>
-
-        <!-- ============ DASHBOARD PAGE ============ -->
-        <section id="page-dashboard" class="page">
-            <header class="page-header">
-                <h1>📊 Dashboard</h1>
-                <p class="subtitle">Pola energi & produktivitasmu.</p>
-            </header>
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <span class="stat-icon">🚨</span>
-                    <span class="stat-value" id="stat-reschedules">0</span>
-                    <span class="stat-label">Rescue</span>
-                </div>
-                <div class="stat-card">
-                    <span class="stat-icon">☀️</span>
-                    <span class="stat-value" id="stat-checkins">0</span>
-                    <span class="stat-label">Check-in</span>
-                </div>
-                <div class="stat-card">
-                    <span class="stat-icon">⚡</span>
-                    <span class="stat-value" id="stat-avg-energy">0</span>
-                    <span class="stat-label">Avg Energi</span>
-                </div>
-                <div class="stat-card">
-                    <span class="stat-icon">📝</span>
-                    <span class="stat-value" id="stat-journals">0</span>
-                    <span class="stat-label">Jurnal</span>
-                </div>
-            </div>
-            <div class="card">
-                <h3>⚡ Tren Energi</h3>
-                <div class="chart-container">
-                    <canvas id="energy-chart"></canvas>
-                </div>
-            </div>
-            <div class="card">
-                <h3>😊 Distribusi Mood</h3>
-                <div class="chart-container chart-small">
-                    <canvas id="mood-chart"></canvas>
-                </div>
-            </div>
-        </section>
-    </main>
-
-    <!-- ===================== PROFILE MODAL ===================== -->
-    <div id="profile-modal" class="modal-overlay hidden">
-        <div class="modal glass-card profile-modal-card">
-            <button class="modal-close" id="profile-close">&times;</button>
-            <div class="profile-header">
-                <div class="profile-avatar-large">
-                    <span id="profile-avatar-initial">U</span>
-                </div>
-                <h2 id="profile-name-display">User Name</h2>
-                <p class="subtitle" id="profile-email-display">user@example.com</p>
-                <span class="badge badge-premium">FlowMate Member</span>
-            </div>
-            
-            <div class="profile-stats">
-                <div class="p-stat">
-                    <h4>Status</h4>
-                    <p>Active</p>
-                </div>
-                <div class="p-stat">
-                    <h4>Plan</h4>
-                    <p>Free</p>
-                </div>
-            </div>
-
-            <div class="form-group" style="margin-top: 24px;">
-                <label>Username (Read-Only)</label>
-                <input type="text" id="profile-username" class="input-field" disabled>
-            </div>
+                </section>
+            </main>
         </div>
     </div>
 
-    <!-- ===================== SETTINGS MODAL ===================== -->
-    <div id="settings-modal" class="modal-overlay hidden">
-        <div class="modal glass-card settings-modal-card">
-            <button class="modal-close" id="settings-close">&times;</button>
-            <div class="modal-title-header">
-                <div class="title-icon">⚙️</div>
-                <h2>Pengaturan Aplikasi</h2>
-                <p class="subtitle">Sesuaikan preferensi Anda untuk pengalaman terbaik.</p>
+    <div class="modal-overlay hidden" id="add-event-modal">
+        <div class="modal-card">
+            <button class="modal-close" id="add-event-close">×</button>
+            <h3>Tambah Event</h3>
+            <div class="form-grid">
+                <div>
+                    <label class="field-label" for="event-title">Nama event</label>
+                    <input type="text" id="event-title" class="input-field" placeholder="Contoh: Praktikum robotika">
+                </div>
             </div>
-            
-            <div class="settings-section">
-                <h3>Preferensi Tampilan & Wilayah</h3>
-                <div class="form-group">
-                    <label>Bahasa</label>
-                    <select class="input-field select-premium">
-                        <option>Bahasa Indonesia</option>
-                        <option>English</option>
+            <div class="form-grid two-col">
+                <div>
+                    <label class="field-label" for="event-start">Mulai</label>
+                    <input type="time" id="event-start" class="input-field">
+                </div>
+                <div>
+                    <label class="field-label" for="event-end">Selesai</label>
+                    <input type="time" id="event-end" class="input-field">
+                </div>
+            </div>
+            <div class="form-grid two-col">
+                <div>
+                    <label class="field-label" for="event-priority">Prioritas</label>
+                    <select id="event-priority" class="select-field">
+                        <option value="high">High</option>
+                        <option value="medium" selected>Medium</option>
+                        <option value="low">Low</option>
                     </select>
                 </div>
-                <div class="form-group">
-                    <label>Zona Waktu</label>
-                    <select class="input-field select-premium">
-                        <option>WIB (Jakarta) - UTC+7</option>
-                        <option>WITA (Bali) - UTC+8</option>
-                        <option>WIT (Papua) - UTC+9</option>
-                    </select>
-                </div>
+                <label class="checkbox-row">
+                    <input type="checkbox" id="event-immovable">
+                    <span>Event wajib / fixed</span>
+                </label>
             </div>
-
-            <div class="settings-section">
-                <h3>Notifikasi & Privasi</h3>
-                <div class="setting-toggle-row">
-                    <div class="toggle-info">
-                        <h4>Notifikasi Email</h4>
-                        <p>Terima ringkasan jadwal harian via email.</p>
-                    </div>
-                    <label class="switch">
-                        <input type="checkbox" checked>
-                        <span class="slider round"></span>
-                    </label>
-                </div>
-                <div class="setting-toggle-row">
-                    <div class="toggle-info">
-                        <h4>Mode Fokus Ketat</h4>
-                        <p>Matikan semua animasi selama jam kerja.</p>
-                    </div>
-                    <label class="switch">
-                        <input type="checkbox">
-                        <span class="slider round"></span>
-                    </label>
-                </div>
-            </div>
-
-            <div class="settings-section">
-                <h3>Integrasi</h3>
-                <div class="setting-toggle-row">
-                    <div class="toggle-info">
-                        <h4>Google Calendar</h4>
-                        <p>Sinkronisasi jadwal untuk 7 hari ke depan.</p>
-                    </div>
-                    <button id="btn-sync-gcal-settings" class="btn btn-primary" style="font-size:12px; padding:6px 12px;">Sync Sekarang</button>
-                </div>
-            </div>
-
-            <button class="btn btn-primary btn-full" style="margin-top: 24px;" id="settings-save">Simpan Pengaturan</button>
+            <button id="add-event-submit" class="primary-btn wide-btn">
+                <span class="btn-text">Simpan Aktivitasku</span>
+                <span class="btn-loader hidden"></span>
+            </button>
         </div>
     </div>
 
-    <!-- ===================== AUTH MODAL ===================== -->
-    <div id="auth-overlay" class="auth-overlay">
+    <div class="auth-overlay" id="auth-overlay">
         <div class="auth-card">
-            <div class="auth-logo">
-                <span>🌊</span>
-                <h1>FlowMate</h1>
-                <p>Asisten jadwal yang empati.</p>
+            <p class="eyebrow">FlowMate</p>
+            <h2>Debug your broken day. Recover what matters.</h2>
+            <p class="auth-copy">Demo mode bisa langsung dipakai tanpa Google OAuth. Login hanya diperlukan kalau kamu ingin menyimpan event, journal, dan history ke database lokal.</p>
+
+            <div class="button-row auth-row">
+                <button id="btn-demo-mode" class="primary-btn">Continue in Demo Mode</button>
             </div>
 
-            <!-- Tab switcher -->
             <div class="auth-tabs">
                 <button class="auth-tab active" id="tab-login">Masuk</button>
                 <button class="auth-tab" id="tab-register">Daftar</button>
             </div>
 
-            <!-- Google Sign-In Button -->
-            <div class="google-auth-container" style="display: flex; justify-content: center; margin-bottom: 20px;">
-                <div id="g_id_onload"
-                    data-client_id="849432037168-mc7ntasd097umoko4dbt0t9f9qant7s1.apps.googleusercontent.com"
-                    data-context="signin"
-                    data-ux_mode="popup"
-                    data-callback="handleGoogleLogin"
-                    data-auto_prompt="false">
-                </div>
-                <div class="g_id_signin"
-                    data-type="standard"
-                    data-shape="rectangular"
-                    data-theme="outline"
-                    data-text="signin_with"
-                    data-size="large"
-                    data-logo_alignment="left">
-                </div>
-            </div>
-
-            <div style="text-align: center; color: var(--text-muted); font-size: 13px; margin-bottom: 20px;">ATAU</div>
-
-            <!-- Login Form -->
-            <form id="login-form" class="auth-form" autocomplete="off">
-                <div class="form-group">
-                    <label>Username</label>
-                    <input type="text" id="login-username" class="input-field" placeholder="username kamu" required>
-                </div>
-                <div class="form-group">
-                    <label>Password</label>
-                    <input type="password" id="login-password" class="input-field" placeholder="••••••••" required>
-                </div>
-                <p id="login-error" class="auth-error hidden"></p>
-                <button type="submit" class="btn btn-primary btn-full" id="login-btn">
+            <form id="login-form" class="auth-form">
+                <label class="field-label" for="login-username">Username</label>
+                <input type="text" id="login-username" class="input-field" autocomplete="username">
+                <label class="field-label" for="login-password">Password</label>
+                <input type="password" id="login-password" class="input-field" autocomplete="current-password">
+                <p class="form-error hidden" id="login-error"></p>
+                <button id="login-btn" class="primary-btn wide-btn" type="submit">
                     <span class="btn-text">Masuk</span>
                     <span class="btn-loader hidden"></span>
                 </button>
             </form>
 
-            <!-- Register Form -->
-            <form id="register-form" class="auth-form hidden" autocomplete="off">
-                <div class="form-group">
-                    <label>Username</label>
-                    <input type="text" id="reg-username" class="input-field" placeholder="username unikmu" required>
-                </div>
-                <div class="form-group">
-                    <label>Email</label>
-                    <input type="email" id="reg-email" class="input-field" placeholder="email@kamu.com" required>
-                </div>
-                <div class="form-group">
-                    <label>Password</label>
-                    <input type="password" id="reg-password" class="input-field" placeholder="min. 8 karakter" required>
-                </div>
-                <p id="reg-error" class="auth-error hidden"></p>
-                <button type="submit" class="btn btn-primary btn-full" id="reg-btn">
+            <form id="register-form" class="auth-form hidden">
+                <label class="field-label" for="reg-username">Username</label>
+                <input type="text" id="reg-username" class="input-field" autocomplete="username">
+                <label class="field-label" for="reg-email">Email</label>
+                <input type="email" id="reg-email" class="input-field" autocomplete="email">
+                <label class="field-label" for="reg-password">Password</label>
+                <input type="password" id="reg-password" class="input-field" autocomplete="new-password">
+                <p class="form-error hidden" id="reg-error"></p>
+                <button id="reg-btn" class="primary-btn wide-btn" type="submit">
                     <span class="btn-text">Buat Akun</span>
                     <span class="btn-loader hidden"></span>
                 </button>
             </form>
         </div>
     </div>
+
+    <!-- Floating Panic Button (FAB) -->
+    <button class="panic-fab" id="panic-fab" aria-label="Debug My Day" title="🚨 Harimu crash? Klik di sini!">
+        <span class="panic-fab-icon">🚨</span>
+        <span class="panic-fab-label">SOS</span>
+    </button>
 
     <script src="/static/js/app.js"></script>
 </body>

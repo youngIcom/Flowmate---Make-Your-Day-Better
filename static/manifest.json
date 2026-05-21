@@ -1,0 +1,41 @@
+{
+  "name": "FlowMate — Schedule Debugger",
+  "short_name": "FlowMate",
+  "description": "AI-powered schedule recovery engine for chaotic days.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#09111d",
+  "theme_color": "#56d4c8",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/static/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/static/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["productivity", "utilities"],
+  "shortcuts": [
+    {
+      "name": "Debug My Day",
+      "short_name": "Rescue",
+      "description": "Langsung buka rescue console",
+      "url": "/?page=home",
+      "icons": [{ "src": "/static/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Morning Check-in",
+      "short_name": "Check-in",
+      "description": "Mulai hari dengan check-in",
+      "url": "/?page=checkin",
+      "icons": [{ "src": "/static/icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

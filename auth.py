@@ -7,56 +7,58 @@ import os
 from datetime import datetime, timedelta
 from typing import Optional
 
-from jose import JWTError, jwt
-from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
+from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
-from database import get_db, User
+from database import User, get_db
 
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 SECRET_KEY = os.getenv("SECRET_KEY", "flowmate-dev-secret-change-in-production")
-ALGORITHM  = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
 
-pwd_context    = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme  = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
+
 
 # ---------------------------------------------------------------------------
 # Password helpers
 # ---------------------------------------------------------------------------
-
 def hash_password(plain: str) -> str:
     return pwd_context.hash(plain)
+
 
 def verify_password(plain: str, hashed: str) -> bool:
     return pwd_context.verify(plain, hashed)
 
+
 # ---------------------------------------------------------------------------
 # JWT helpers
 # ---------------------------------------------------------------------------
-
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
     expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
+
 def decode_token(token: str) -> Optional[str]:
-    """Returns user_id from token, or None if invalid."""
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload.get("sub")
     except JWTError:
         return None
 
+
 # ---------------------------------------------------------------------------
 # FastAPI dependency: get current user
 # ---------------------------------------------------------------------------
-
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -73,8 +75,12 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     return user
 
 
-def get_current_user_optional(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> Optional[User]:
-    """Like get_current_user but returns None instead of raising (for demo-compatible endpoints)."""
+def get_current_user_optional(
+    token: Optional[str] = Depends(oauth2_scheme_optional),
+    db: Session = Depends(get_db),
+) -> Optional[User]:
+    if not token:
+        return None
     try:
         return get_current_user(token, db)
     except Exception:
