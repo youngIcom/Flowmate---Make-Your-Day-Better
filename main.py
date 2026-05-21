@@ -8,6 +8,7 @@ import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
@@ -18,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from auth import create_access_token, get_current_user, get_current_user_optional, hash_password, verify_password
+from auth import create_access_token, get_current_user, hash_password, verify_password
 from database import (
     CalendarSnapshot,
     CheckinRecord,
@@ -36,7 +37,7 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-DEMO_MODE = os.getenv("DEMO_MODE", "true").lower() == "true"
+DEMO_MODE = os.getenv("DEMO_MODE", "false").lower() == "true"
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GOOGLE_CLIENT_ID = os.getenv(
     "GOOGLE_CLIENT_ID",
@@ -77,10 +78,9 @@ if not DEMO_MODE and GEMINI_API_KEY:
         )
         print("Gemini live mode enabled")
     except Exception as exc:
-        print(f"Gemini init failed: {exc}. Falling back to demo planner.")
-        DEMO_MODE = True
+        print(f"Gemini init failed: {exc}. Falling back to the local recovery planner.")
 else:
-    print("Running in DEMO MODE")
+    print("Running with local recovery planner until Gemini is configured")
 
 
 # ---------------------------------------------------------------------------
@@ -111,6 +111,14 @@ class GoogleAuthRequest(BaseModel):
     credential: str
 
 
+class ProfileUpdateRequest(BaseModel):
+    display_name: Optional[str] = None
+    default_wake_time: Optional[str] = None
+    default_sleep_hours: Optional[float] = Field(default=None, ge=1, le=16)
+    timezone: Optional[str] = None
+    focus_mode_enabled: Optional[bool] = None
+
+
 class CalendarEvent(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     title: str
@@ -129,7 +137,7 @@ class RescueRequest(BaseModel):
     energy_level: int = Field(ge=1, le=10)
     mood: str = "overwhelmed"
     current_time: Optional[str] = None
-    mode: str = "demo"
+    mode: str = "live"
     today_events: List[CalendarEvent] = Field(default_factory=list)
 
 
@@ -252,6 +260,18 @@ def today_str() -> str:
     return datetime.now().strftime("%Y-%m-%d")
 
 
+def get_user_timezone_name(user: Optional[User]) -> str:
+    timezone_name = (getattr(user, "timezone", None) or "Asia/Jakarta").strip()
+    return timezone_name or "Asia/Jakarta"
+
+
+def get_user_timezone(user: Optional[User]) -> ZoneInfo:
+    try:
+        return ZoneInfo(get_user_timezone_name(user))
+    except Exception:
+        return ZoneInfo("Asia/Jakarta")
+
+
 def demo_calendar_for_date(date_str: str) -> List[Dict[str, Any]]:
     return [
         {
@@ -333,6 +353,19 @@ def get_user_events_for_today(db: Session, user: User) -> List[Dict[str, Any]]:
     return [serialize_event_model(record) for record in records]
 
 
+def serialize_profile(user: User) -> Dict[str, Any]:
+    return {
+        "id": user.id,
+        "username": user.username,
+        "display_name": user.display_name or user.username,
+        "email": user.email,
+        "default_wake_time": user.default_wake_time or "07:00",
+        "default_sleep_hours": user.default_sleep_hours or 7.5,
+        "timezone": user.timezone or "Asia/Jakarta",
+        "focus_mode_enabled": bool(user.focus_mode_enabled),
+    }
+
+
 def get_all_user_events(db: Session, user: User) -> List[Dict[str, Any]]:
     records = db.query(Event).filter(Event.user_id == user.id).order_by(Event.event_date.asc(), Event.start.asc()).all()
     return [serialize_event_model(record) for record in records]
@@ -350,7 +383,7 @@ def resolve_today_events(
         user_events = get_user_events_for_today(db, current_user)
         if user_events:
             return sort_events([normalize_event(event, fallback_date) for event in user_events])
-    return sort_events([normalize_event(event, fallback_date) for event in demo_calendar_for_date(fallback_date)])
+    return []
 
 
 def get_time_context(request_time: Optional[str]) -> str:
@@ -656,7 +689,7 @@ def build_fallback_plan(payload: Dict[str, Any], today_events: List[Dict[str, An
     return {
         "session_id": str(uuid.uuid4()),
         "summary": summary,
-        "mode": "demo" if DEMO_MODE else "live",
+        "mode": "live",
         "situation": situation,
         "mood": mood,
         "before_schedule": original_events,
@@ -770,7 +803,7 @@ def normalize_live_plan(parsed: Dict[str, Any], fallback_plan: Dict[str, Any]) -
 
 async def generate_plan(payload: Dict[str, Any], today_events: List[Dict[str, Any]]) -> Dict[str, Any]:
     fallback_plan = build_fallback_plan(payload, today_events)
-    if DEMO_MODE or genai_model is None or payload.get("mode") == "demo":
+    if DEMO_MODE or genai_model is None:
         return fallback_plan
 
     try:
@@ -793,6 +826,27 @@ async def generate_plan(payload: Dict[str, Any], today_events: List[Dict[str, An
     except Exception as exc:
         print(f"Gemini failed, using fallback planner: {exc}")
         return fallback_plan
+
+
+def normalize_journal_analysis(analysis: Dict[str, Any]) -> Dict[str, Any]:
+    blockers = analysis.get("blockers", [])
+    if isinstance(blockers, str):
+        blockers = [blockers]
+    elif not isinstance(blockers, list):
+        blockers = []
+
+    productivity = analysis.get("productivity", 5)
+    try:
+        productivity = int(float(productivity))
+    except (TypeError, ValueError):
+        productivity = 5
+
+    return {
+        "mood": str(analysis.get("mood") or "netral"),
+        "productivity": max(1, min(10, productivity)),
+        "blockers": [str(item) for item in blockers if str(item).strip()],
+        "insight": str(analysis.get("insight") or "Terus amati pola energimu agar schedule-mu makin realistis."),
+    }
 
 
 def analyze_journal_text(text: str) -> Dict[str, Any]:
@@ -820,12 +874,12 @@ def analyze_journal_text(text: str) -> Dict[str, Any]:
         if mood == "berat"
         else "Pola harimu cukup stabil. Pertahankan satu fokus utama per sesi."
     )
-    return {
+    return normalize_journal_analysis({
         "mood": mood,
         "productivity": productivity,
         "blockers": blockers,
         "insight": insight,
-    }
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -843,6 +897,7 @@ def register(data: UserRegister, db: Session = Depends(get_db)):
         username=data.username,
         email=data.email,
         hashed_pw=hash_password(data.password),
+        display_name=data.username,
     )
     db.add(user)
     db.commit()
@@ -876,6 +931,7 @@ def google_login(data: GoogleAuthRequest, db: Session = Depends(get_db)):
                 username=name.replace(" ", "_").lower() + "_" + str(uuid.uuid4())[:4],
                 email=email,
                 hashed_pw=None,
+                display_name=name,
             )
             db.add(user)
             db.commit()
@@ -887,18 +943,56 @@ def google_login(data: GoogleAuthRequest, db: Session = Depends(get_db)):
 
 @app.get("/api/auth/me")
 def me(current_user: User = Depends(get_current_user)):
-    return {"id": current_user.id, "username": current_user.username, "email": current_user.email}
+    return serialize_profile(current_user)
+
+
+@app.get("/api/public-config")
+def get_public_config():
+    return {"google_client_id": GOOGLE_CLIENT_ID}
+
+
+@app.get("/api/profile")
+def get_profile(current_user: User = Depends(get_current_user)):
+    return serialize_profile(current_user)
+
+
+@app.patch("/api/profile")
+def update_profile(
+    payload: ProfileUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    updates = payload.model_dump(exclude_none=True)
+
+    if "display_name" in updates:
+        current_user.display_name = updates["display_name"].strip() or current_user.username
+    if "default_wake_time" in updates:
+        current_user.default_wake_time = updates["default_wake_time"] or "07:00"
+    if "default_sleep_hours" in updates:
+        current_user.default_sleep_hours = updates["default_sleep_hours"] or 7.5
+    if "timezone" in updates:
+        current_user.timezone = updates["timezone"].strip() or "Asia/Jakarta"
+    if "focus_mode_enabled" in updates:
+        current_user.focus_mode_enabled = bool(updates["focus_mode_enabled"])
+
+    if not current_user.display_name:
+        current_user.display_name = current_user.username
+    if not current_user.default_wake_time:
+        current_user.default_wake_time = "07:00"
+    if not current_user.default_sleep_hours:
+        current_user.default_sleep_hours = 7.5
+    if not current_user.timezone:
+        current_user.timezone = "Asia/Jakarta"
+
+    db.add(current_user)
+    db.commit()
+    db.refresh(current_user)
+    return {"status": "updated", "profile": serialize_profile(current_user)}
 
 
 # ---------------------------------------------------------------------------
 # Schedule endpoints
 # ---------------------------------------------------------------------------
-@app.get("/api/demo-calendar")
-def get_demo_calendar():
-    date_str = today_str()
-    return {"today_events": demo_calendar_for_date(date_str), "all_events": demo_calendar_for_date(date_str)}
-
-
 @app.get("/api/events")
 def get_events(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     today_events = get_user_events_for_today(db, current_user)
@@ -938,7 +1032,7 @@ def delete_event(event_id: str, db: Session = Depends(get_db), current_user: Use
 async def rescue_schedule(
     request: RescueRequest,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     today_events = resolve_today_events(request.today_events, db, current_user)
     payload = {
@@ -946,48 +1040,48 @@ async def rescue_schedule(
         "energy_level": request.energy_level,
         "mood": request.mood,
         "current_time": request.current_time or get_time_context(None),
-        "mode": request.mode,
+        "mode": "live",
+        "user_profile": {
+            "default_wake_time": current_user.default_wake_time or "07:00",
+            "default_sleep_hours": current_user.default_sleep_hours or 7.5,
+            "timezone": current_user.timezone or "Asia/Jakarta",
+        },
     }
     result = await generate_plan(payload, today_events)
 
-    user_id = current_user.id if current_user else None
     session_id = result.get("session_id") or str(uuid.uuid4())
     damage = result.get("damage_assessment", {})
 
-    # --- Persist CalendarSnapshot (before-state) ---
-    snapshot_source = "gcal" if current_user else "demo"
     db.add(
         CalendarSnapshot(
             id=str(uuid.uuid4()),
-            user_id=user_id,
-            source=snapshot_source,
+            user_id=current_user.id,
+            source="live",
             raw_events_json=json.dumps(today_events, ensure_ascii=False),
         )
     )
 
-    # --- Persist RescueSession ---
-    rescue_record = RescueSession(
-        id=session_id,
-        user_id=user_id,
-        situation_text=request.situation,
-        mood=request.mood,
-        energy_level=request.energy_level,
-        damage_score=damage.get("score"),
-        damage_level=damage.get("level"),
-        recovery_score_before=result.get("recovery_score_before"),
-        recovery_score_after=result.get("recovery_score_after"),
-        ai_summary=result.get("summary"),
-        mode=result.get("mode", "demo"),
-        events_before_count=len(today_events),
-        events_after_count=len(result.get("new_schedule", [])),
+    db.add(
+        RescueSession(
+            id=session_id,
+            user_id=current_user.id,
+            situation_text=request.situation,
+            mood=request.mood,
+            energy_level=request.energy_level,
+            damage_score=damage.get("score"),
+            damage_level=damage.get("level"),
+            recovery_score_before=result.get("recovery_score_before"),
+            recovery_score_after=result.get("recovery_score_after"),
+            ai_summary=result.get("summary"),
+            mode="live",
+            events_before_count=len(today_events),
+            events_after_count=len(result.get("new_schedule", [])),
+        )
     )
-    db.add(rescue_record)
 
-    # --- Persist ScheduleActions ---
     for action in result.get("schedule_actions", []):
         from_raw = action.get("from") or ""
         to_raw = action.get("to") or ""
-        # Parse "HH:MM-HH:MM" or "besok HH:MM-HH:MM" strings safely
         old_start = old_end = new_start = new_end = None
         if "-" in from_raw:
             parts = from_raw.split("-")
@@ -999,7 +1093,7 @@ async def rescue_schedule(
             ScheduleAction(
                 id=str(uuid.uuid4()),
                 rescue_session_id=session_id,
-                user_id=user_id,
+                user_id=current_user.id,
                 action_type=action.get("action", "unknown"),
                 event_title=action.get("event_title"),
                 old_start=old_start,
@@ -1010,26 +1104,27 @@ async def rescue_schedule(
             )
         )
 
-    # --- Legacy CheckinRecord (kept for backward compatibility) ---
-    if current_user:
-        db.add(
-            CheckinRecord(
-                id=str(uuid.uuid4()),
-                user_id=current_user.id,
-                type="rescue",
-                energy_level=request.energy_level,
-                mood=request.mood,
-                events_before=len(today_events),
-                events_after=len(result.get("new_schedule", [])),
-            )
+    db.add(
+        CheckinRecord(
+            id=str(uuid.uuid4()),
+            user_id=current_user.id,
+            type="rescue",
+            energy_level=request.energy_level,
+            mood=request.mood,
+            events_before=len(today_events),
+            events_after=len(result.get("new_schedule", [])),
         )
+    )
 
     db.commit()
     return result
 
 
 @app.post("/api/validate-schedule")
-def validate_schedule_endpoint(request: ValidateScheduleRequest):
+def validate_schedule_endpoint(
+    request: ValidateScheduleRequest,
+    current_user: User = Depends(get_current_user),
+):
     original_events = [normalize_event(event.model_dump(), today_str()) for event in request.original_events]
     new_schedule = [normalize_event(event.model_dump(), event.date or today_str()) for event in request.new_schedule]
     return validate_schedule(original_events, new_schedule, request.energy_level)
@@ -1039,12 +1134,10 @@ def validate_schedule_endpoint(request: ValidateScheduleRequest):
 def apply_schedule(
     request: ApplyScheduleRequest,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     normalized = [normalize_event(event.model_dump(), today_str()) for event in request.new_schedule]
 
-    if not current_user:
-        return {"status": "applied_demo", "applied_count": len(normalized)}
 
     today = today_str()
 
@@ -1126,7 +1219,7 @@ def undo_schedule(
 async def legacy_reschedule(
     request: RescueRequest,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     return await rescue_schedule(request, db, current_user)
 
@@ -1138,7 +1231,7 @@ async def legacy_reschedule(
 async def morning_checkin(
     request: CheckinRequest,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     today_events = resolve_today_events(request.today_events, db, current_user)
     payload = {
@@ -1146,7 +1239,12 @@ async def morning_checkin(
         "energy_level": request.energy_level,
         "mood": request.mood,
         "current_time": request.wake_up_time,
-        "mode": "checkin",
+        "mode": "live",
+        "user_profile": {
+            "default_wake_time": current_user.default_wake_time or "07:00",
+            "default_sleep_hours": current_user.default_sleep_hours or 7.5,
+            "timezone": current_user.timezone or "Asia/Jakarta",
+        },
     }
     result = await generate_plan(payload, today_events)
     result["checkin"] = {
@@ -1155,28 +1253,24 @@ async def morning_checkin(
         "top_priority": request.top_priority,
     }
 
-    # --- Persist CalendarSnapshot (today's events at check-in time) ---
-    user_id = current_user.id if current_user else None
     db.add(
         CalendarSnapshot(
             id=str(uuid.uuid4()),
-            user_id=user_id,
-            source="gcal" if current_user else "demo",
+            user_id=current_user.id,
+            source="live",
             raw_events_json=json.dumps(today_events, ensure_ascii=False),
         )
     )
-
-    if current_user:
-        db.add(
-            CheckinRecord(
-                id=str(uuid.uuid4()),
-                user_id=current_user.id,
-                type="checkin",
-                sleep_hours=request.sleep_hours,
-                energy_level=request.energy_level,
-                mood=request.mood,
-            )
+    db.add(
+        CheckinRecord(
+            id=str(uuid.uuid4()),
+            user_id=current_user.id,
+            type="checkin",
+            sleep_hours=request.sleep_hours,
+            energy_level=request.energy_level,
+            mood=request.mood,
         )
+    )
 
     db.commit()
     return result
@@ -1186,7 +1280,7 @@ async def morning_checkin(
 async def save_journal(
     entry: JournalRequest,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     analysis = analyze_journal_text(entry.text)
     if not DEMO_MODE and genai_model is not None:
@@ -1199,7 +1293,7 @@ async def save_journal(
             response = genai_model.generate_content(prompt)
             candidate = json.loads(response.text)
             if isinstance(candidate, dict):
-                analysis = {**analysis, **candidate}
+                analysis = normalize_journal_analysis({**analysis, **candidate})
         except Exception:
             pass
 
@@ -1219,26 +1313,23 @@ async def save_journal(
         "analysis": analysis,
     }
 
-    if current_user:
-        record = JournalEntry(
-            id=entry_id,
-            user_id=current_user.id,
-            text=entry.text,
-            mood=analysis.get("mood"),
-            productivity_score=analysis.get("productivity"),
-            extracted_entities=extracted_entities_json,
-            date=entry_date,
-        )
-        db.add(record)
-        db.commit()
+    record = JournalEntry(
+        id=entry_id,
+        user_id=current_user.id,
+        text=entry.text,
+        mood=analysis.get("mood"),
+        productivity_score=analysis.get("productivity"),
+        extracted_entities=extracted_entities_json,
+        date=entry_date,
+    )
+    db.add(record)
+    db.commit()
 
     return {"status": "saved", "entry": saved_entry, "analysis": analysis}
 
 
 @app.get("/api/journal")
-def get_journal(db: Session = Depends(get_db), current_user: Optional[User] = Depends(get_current_user_optional)):
-    if not current_user:
-        return {"entries": []}
+def get_journal(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
 
     entries = (
         db.query(JournalEntry)
@@ -1258,33 +1349,30 @@ def get_journal(db: Session = Depends(get_db), current_user: Optional[User] = De
 @app.get("/api/journal/weekly-insight")
 def get_weekly_insight(
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     """Analyze journal entries from the last 7 days and return weekly patterns."""
     seven_days_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
 
-    if current_user:
-        entries = (
-            db.query(JournalEntry)
-            .filter(
-                JournalEntry.user_id == current_user.id,
-                JournalEntry.date >= seven_days_ago,
-            )
-            .order_by(JournalEntry.date.asc())
-            .all()
+    entries = (
+        db.query(JournalEntry)
+        .filter(
+            JournalEntry.user_id == current_user.id,
+            JournalEntry.date >= seven_days_ago,
         )
-        mood_list = [e.mood for e in entries if e.mood]
-        productivity_list = [e.productivity_score for e in entries if e.productivity_score]
-        all_blockers: List[str] = []
-        for entry in entries:
-            if entry.extracted_entities:
-                try:
-                    parsed = json.loads(entry.extracted_entities)
-                    all_blockers.extend(parsed.get("blockers", []))
-                except Exception:
-                    pass
-    else:
-        return {"entries_count": 0, "message": "Login untuk melihat weekly insight personalmu.", "patterns": []}
+        .order_by(JournalEntry.date.asc())
+        .all()
+    )
+    mood_list = [e.mood for e in entries if e.mood]
+    productivity_list = [e.productivity_score for e in entries if e.productivity_score]
+    all_blockers: List[str] = []
+    for entry in entries:
+        if entry.extracted_entities:
+            try:
+                parsed = json.loads(entry.extracted_entities)
+                all_blockers.extend(parsed.get("blockers", []))
+            except Exception:
+                pass
 
     if not entries:
         return {"entries_count": 0, "message": "Belum ada jurnal dalam 7 hari terakhir.", "patterns": []}
@@ -1349,24 +1437,7 @@ def get_weekly_insight(
 
 
 @app.get("/api/dashboard")
-def get_dashboard(db: Session = Depends(get_db), current_user: Optional[User] = Depends(get_current_user_optional)):
-    if not current_user:
-        demo_records = [
-            {"type": "rescue", "energy_level": 4, "mood": "overwhelmed"},
-            {"type": "checkin", "energy_level": 6, "mood": "neutral"},
-            {"type": "rescue", "energy_level": 5, "mood": "tired"},
-        ]
-        return {
-            "total_rescues": 2,
-            "total_checkins": 1,
-            "avg_energy": 5.0,
-            "rescued_days": 2,
-            "fixed_event_preservation_rate": 100,
-            "avg_recovery_improvement": 37,
-            "checkin_history": demo_records,
-            "journal_entries": [],
-        }
-
+def get_dashboard(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     records = db.query(CheckinRecord).filter(CheckinRecord.user_id == current_user.id).all()
     journals = db.query(JournalEntry).filter(JournalEntry.user_id == current_user.id).all()
     rescue_sessions = (
@@ -1443,11 +1514,13 @@ def sync_gcal(data: GcalSyncRequest, db: Session = Depends(get_db), current_user
     if not token:
         raise HTTPException(status_code=400, detail="No token provided")
 
-    start = datetime.now()
-    end = start + timedelta(days=7)
+    sync_timezone = get_user_timezone(current_user)
+    start = datetime.now(sync_timezone).replace(hour=0, minute=0, second=0, microsecond=0)
+    end = start + timedelta(days=1)
+    target_date = start.strftime("%Y-%m-%d")
     params = {
-        "timeMin": start.replace(hour=0, minute=0, second=0).isoformat() + "Z",
-        "timeMax": end.replace(hour=23, minute=59, second=59).isoformat() + "Z",
+        "timeMin": start.isoformat(),
+        "timeMax": end.isoformat(),
         "singleEvents": True,
         "orderBy": "startTime",
     }
@@ -1462,15 +1535,29 @@ def sync_gcal(data: GcalSyncRequest, db: Session = Depends(get_db), current_user
         raise HTTPException(status_code=response.status_code, detail="Failed to fetch from Google Calendar")
 
     synced = 0
+    skipped_all_day_count = 0
     for item in response.json().get("items", []):
-        start_time = item.get("start", {}).get("dateTime")
-        end_time = item.get("end", {}).get("dateTime")
+        start_payload = item.get("start", {})
+        end_payload = item.get("end", {})
+        start_time = start_payload.get("dateTime")
+        end_time = end_payload.get("dateTime")
         if not start_time or not end_time:
+            if start_payload.get("date") or end_payload.get("date"):
+                skipped_all_day_count += 1
             continue
 
-        event_date = start_time.split("T")[0]
-        start_hm = start_time.split("T")[1][:5]
-        end_hm = end_time.split("T")[1][:5]
+        try:
+            start_dt = datetime.fromisoformat(start_time.replace("Z", "+00:00")).astimezone(sync_timezone)
+            end_dt = datetime.fromisoformat(end_time.replace("Z", "+00:00")).astimezone(sync_timezone)
+        except ValueError:
+            continue
+
+        event_date = start_dt.strftime("%Y-%m-%d")
+        if event_date != target_date:
+            continue
+
+        start_hm = start_dt.strftime("%H:%M")
+        end_hm = end_dt.strftime("%H:%M")
         title = "[GCal] " + item.get("summary", "Busy")
 
         exists = (
@@ -1502,7 +1589,6 @@ def sync_gcal(data: GcalSyncRequest, db: Session = Depends(get_db), current_user
 
     db.commit()
 
-    # --- Persist CalendarSnapshot after GCal sync ---
     if synced > 0:
         all_gcal_events = get_all_user_events(db, current_user)
         db.add(
@@ -1515,7 +1601,13 @@ def sync_gcal(data: GcalSyncRequest, db: Session = Depends(get_db), current_user
         )
         db.commit()
 
-    return {"status": "success", "synced_count": synced}
+    return {
+        "status": "success",
+        "synced_count": synced,
+        "skipped_all_day_count": skipped_all_day_count,
+        "target_date": target_date,
+        "timezone": get_user_timezone_name(current_user),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1583,6 +1675,19 @@ def health():
 
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return FileResponse(str(BASE_DIR / "static" / "favicon_flowmate" / "favicon.ico"))
+
+
+@app.get("/site.webmanifest", include_in_schema=False)
+async def site_webmanifest():
+    return FileResponse(
+        str(BASE_DIR / "static" / "site.webmanifest"),
+        media_type="application/manifest+json",
+    )
 
 
 @app.get("/")

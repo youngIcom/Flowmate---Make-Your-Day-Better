@@ -8,8 +8,11 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="FlowMate">
-    <link rel="manifest" href="/static/manifest.json">
-    <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+    <link rel="manifest" href="/site.webmanifest?v=20260522">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/favicon_flowmate/apple-touch-icon.png?v=20260522">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon_flowmate/favicon-32x32.png?v=20260522">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon_flowmate/favicon-16x16.png?v=20260522">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico?v=20260522">
     <title>FlowMate | Schedule Debugger</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -22,22 +25,24 @@
         <aside class="sidebar" id="sidebar">
             <div>
                 <div class="brand-block">
-                    <div class="brand-mark">FM</div>
-                    <div>
+                    <div class="brand-mark">
+                        <img src="/static/favicon_flowmate/apple-touch-icon.png?v=20260522" alt="FlowMate logo" class="brand-logo">
+                    </div>
+                    <div class="brand-copy">
                         <div class="brand-name">FlowMate</div>
                         <div class="brand-tag">Schedule Debugger</div>
                     </div>
                 </div>
                 <nav class="nav-stack">
                     <button class="nav-btn active" data-page="home">Debugger</button>
-                    <button class="nav-btn" data-page="checkin">Morning Check-in</button>
+                    <button class="nav-btn" data-page="checkin">Mood Check-in</button>
                     <button class="nav-btn" data-page="journal">Journal</button>
                     <button class="nav-btn" data-page="dashboard">Dashboard</button>
                 </nav>
             </div>
 
             <div class="sidebar-footer">
-                <div class="mode-chip" id="mode-badge">DEMO MODE</div>
+                <div class="mode-chip" id="mode-badge">LOGIN REQUIRED</div>
                 <p class="sidebar-note">Not another calendar. A recovery engine for chaotic days.</p>
             </div>
         </aside>
@@ -46,14 +51,17 @@
             <header class="topbar">
                 <button class="icon-btn mobile-only" id="mobile-menu-btn" aria-label="Open menu">☰</button>
                 <div>
-                    <p class="eyebrow">FlowMate PRD v2</p>
+                    <p class="eyebrow">FlowMate</p>
                     <h1 class="topbar-title">Your day crashed. FlowMate can patch it.</h1>
                 </div>
                 <div class="topbar-actions">
                     <span class="status-text" id="date-display"></span>
-                    <button class="ghost-btn" id="theme-toggle">Toggle Theme</button>
+                    <button class="ghost-btn theme-toggle-btn" id="theme-toggle" aria-label="Ganti tema" title="Ganti tema"><span id="theme-toggle-icon" aria-hidden="true">🌙</span></button>
                     <button class="primary-btn" id="btn-add-event">Add Event</button>
                     <button class="ghost-btn" id="auth-action-btn">Masuk</button>
+                    <button class="profile-avatar-btn hidden" id="profile-avatar-btn" aria-label="Buka profil">
+                        <span id="profile-avatar-initial">F</span>
+                    </button>
                 </div>
             </header>
 
@@ -92,8 +100,15 @@
                                     <p class="panel-kicker">Before</p>
                                     <h3>Broken Day Timeline</h3>
                                 </div>
-                                <span class="panel-tag">Today</span>
+                                <div class="panel-actions schedule-sync-actions">
+                                    <span class="panel-tag">Today</span>
+                                    <button id="sync-gcal-btn" class="ghost-btn sync-calendar-btn">
+                                        <span class="btn-text">Sync Google Calendar</span>
+                                        <span class="btn-loader hidden"></span>
+                                    </button>
+                                </div>
                             </div>
+                            <p class="sync-helper" id="gcal-sync-status">Tarik event Google Calendar untuk tanggal hari ini ke timeline ini.</p>
                             <div class="timeline-list" id="timeline-before"></div>
                             <div class="legend-row">
                                 <span class="legend-pill legend-danger">Missed / Conflict</span>
@@ -108,7 +123,7 @@
                                     <p class="panel-kicker">Debug Input</p>
                                     <h3>Rescue Console</h3>
                                 </div>
-                                <span class="panel-tag mono" id="auth-state">guest/demo</span>
+                                <span class="panel-tag mono" id="auth-state">login required</span>
                             </div>
 
                             <label class="field-label" for="rescue-message">Ceritakan pelan-pelan, ada apa?</label>
@@ -141,7 +156,7 @@
                                     <span class="btn-text">Debug My Day</span>
                                     <span class="btn-loader hidden"></span>
                                 </button>
-                                <button id="reset-demo-btn" class="ghost-btn">Reset Demo Data</button>
+                                
                             </div>
 
                             <div class="system-box">
@@ -182,7 +197,7 @@
                                 <p class="panel-kicker">Patch Summary</p>
                                 <h3 id="summary-title">Schedule patched successfully</h3>
                             </div>
-                            <span class="panel-tag mono" id="session-mode">demo</span>
+                            <span class="panel-tag mono" id="session-mode">live</span>
                         </div>
 
                         <div class="summary-grid">
@@ -214,8 +229,8 @@
 
                 <section class="page" id="page-checkin">
                     <div class="page-intro">
-                        <p class="eyebrow">Morning Check-in</p>
-                        <h2>Kurangi kemungkinan harimu rusak sejak pagi.</h2>
+                        <p class="eyebrow">Mood Check-in</p>
+                        <h2>Persiapkan dirimu untuk menghadapi sisa hari ini.</h2>
                     </div>
                     <div class="split-grid">
                         <article class="panel">
@@ -250,15 +265,15 @@
                             <label class="field-label" for="ci-priority">Top priority hari ini</label>
                             <input type="text" id="ci-priority" class="input-field" placeholder="Contoh: selesaikan tugas robotika sebelum malam">
                             <button id="checkin-submit" class="primary-btn wide-btn">
-                                <span class="btn-text">Run Morning Check-in</span>
+                                <span class="btn-text">Run Mood Check-in</span>
                                 <span class="btn-loader hidden"></span>
                             </button>
                         </article>
                         <article class="panel" id="checkin-result">
                             <div class="empty-state-block empathic-empty">
                                 <span class="empty-icon">🌅</span>
-                                <h3>Selamat pagi!</h3>
-                                <p>Isi form di sebelah kiri untuk memulai harimu dengan lebih tenang. FlowMate akan menyesuaikan jadwalmu berdasarkan energi dan prioritasmu pagi ini.</p>
+                                <h3 id="dynamic-greeting">Selamat pagi!</h3>
+                                <p>Isi form di sebelah kiri untuk menyesuaikan ritme kerjamu. FlowMate akan mengadaptasi jadwalmu berdasarkan energi dan kondisimu saat ini.</p>
                             </div>
                         </article>
                     </div>
@@ -374,6 +389,71 @@
         </div>
     </div>
 
+    <div class="drawer-overlay hidden" id="profile-drawer-overlay">
+        <aside class="profile-drawer" id="profile-drawer" aria-labelledby="profile-drawer-title">
+            <div class="profile-drawer-header">
+                <div>
+                    <p class="eyebrow">Profile</p>
+                    <h3 id="profile-drawer-title">Personal Recovery Settings</h3>
+                </div>
+                <button class="drawer-close-btn" id="profile-drawer-close" aria-label="Tutup profil">×</button>
+            </div>
+
+            <div class="profile-hero-card">
+                <div class="profile-avatar-large" id="profile-avatar-large">F</div>
+                <div>
+                    <h4 id="profile-name-heading">FlowMate User</h4>
+                    <p class="profile-email" id="profile-email-text">user@example.com</p>
+                    <span class="panel-tag">Live Account</span>
+                </div>
+            </div>
+
+            <div class="profile-section">
+                <p class="section-label">General</p>
+                <label class="field-label" for="profile-display-name">Nama Panggilan</label>
+                <input type="text" id="profile-display-name" class="input-field" placeholder="Nama yang ingin ditampilkan di FlowMate">
+
+                <label class="field-label" for="profile-email">Email</label>
+                <input type="email" id="profile-email" class="input-field" readonly>
+            </div>
+
+            <div class="profile-section">
+                <p class="section-label">Preferensi Tubuh</p>
+                <div class="form-grid two-col">
+                    <div>
+                        <label class="field-label" for="profile-wake-time">Jam Bangun Ideal</label>
+                        <input type="time" id="profile-wake-time" class="input-field">
+                    </div>
+                    <div>
+                        <label class="field-label" for="profile-sleep-hours">Kebutuhan Tidur</label>
+                        <input type="number" id="profile-sleep-hours" class="input-field" min="1" max="16" step="0.5">
+                    </div>
+                </div>
+                <label class="field-label" for="profile-timezone">Timezone</label>
+                <input type="text" id="profile-timezone" class="input-field" placeholder="Contoh: Asia/Jakarta">
+            </div>
+
+            <div class="profile-section">
+                <p class="section-label">Pengaturan</p>
+                <label class="toggle-row" for="profile-focus-mode">
+                    <div>
+                        <strong>Focus Mode</strong>
+                        <p>Kurangi animasi saat jam kerja agar antarmuka lebih tenang.</p>
+                    </div>
+                    <input type="checkbox" id="profile-focus-mode">
+                </label>
+            </div>
+
+            <div class="profile-drawer-actions">
+                <button id="profile-save-btn" class="primary-btn wide-btn">
+                    <span class="btn-text">Simpan Profil</span>
+                    <span class="btn-loader hidden"></span>
+                </button>
+                <button id="profile-logout-btn" class="danger-btn wide-btn">Keluar (Logout)</button>
+            </div>
+        </aside>
+    </div>
+
     <div class="modal-overlay hidden" id="add-event-modal">
         <div class="modal-card">
             <button class="modal-close" id="add-event-close">×</button>
@@ -419,11 +499,7 @@
         <div class="auth-card">
             <p class="eyebrow">FlowMate</p>
             <h2>Debug your broken day. Recover what matters.</h2>
-            <p class="auth-copy">Demo mode bisa langsung dipakai tanpa Google OAuth. Login hanya diperlukan kalau kamu ingin menyimpan event, journal, dan history ke database lokal.</p>
-
-            <div class="button-row auth-row">
-                <button id="btn-demo-mode" class="primary-btn">Continue in Demo Mode</button>
-            </div>
+            <p class="auth-copy">FlowMate sekarang berjalan sebagai live project. Masuk untuk mengelola event nyata, menjalankan rescue plan, menyimpan journal, dan membangun history recovery-mu.</p>
 
             <div class="auth-tabs">
                 <button class="auth-tab active" id="tab-login">Masuk</button>
@@ -464,6 +540,7 @@
         <span class="panic-fab-label">SOS</span>
     </button>
 
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="/static/js/app.js"></script>
 </body>
 </html>

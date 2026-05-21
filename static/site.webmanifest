@@ -1,0 +1,19 @@
+{
+  "name": "FlowMate",
+  "short_name": "FlowMate",
+  "icons": [
+    {
+      "src": "/static/favicon_flowmate/android-chrome-192x192.png?v=20260522",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/favicon_flowmate/android-chrome-512x512.png?v=20260522",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "theme_color": "#56d4c8",
+  "background_color": "#09111d",
+  "display": "standalone"
+}

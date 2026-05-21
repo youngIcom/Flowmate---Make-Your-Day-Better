@@ -9,33 +9,46 @@
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "/static/icons/icon-192.png",
+      "src": "/static/favicon_flowmate/android-chrome-192x192.png?v=20260522",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/static/icons/icon-512.png",
+      "src": "/static/favicon_flowmate/android-chrome-512x512.png?v=20260522",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
     }
   ],
-  "categories": ["productivity", "utilities"],
+  "categories": [
+    "productivity",
+    "utilities"
+  ],
   "shortcuts": [
     {
       "name": "Debug My Day",
       "short_name": "Rescue",
       "description": "Langsung buka rescue console",
       "url": "/?page=home",
-      "icons": [{ "src": "/static/icons/icon-192.png", "sizes": "192x192" }]
+      "icons": [
+        {
+          "src": "/static/favicon_flowmate/android-chrome-192x192.png?v=20260522",
+          "sizes": "192x192"
+        }
+      ]
     },
     {
-      "name": "Morning Check-in",
+      "name": "Mood Check-in",
       "short_name": "Check-in",
       "description": "Mulai hari dengan check-in",
       "url": "/?page=checkin",
-      "icons": [{ "src": "/static/icons/icon-192.png", "sizes": "192x192" }]
+      "icons": [
+        {
+          "src": "/static/favicon_flowmate/android-chrome-192x192.png?v=20260522",
+          "sizes": "192x192"
+        }
+      ]
     }
   ]
 }

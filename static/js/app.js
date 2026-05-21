@@ -1,109 +1,235 @@
 const API = '';
 const STORAGE_KEYS = {
-    guestMode: 'flowmate_guest_mode',
-    demoEvents: 'flowmate_demo_events_v2',
-    guestRescues: 'flowmate_guest_rescues_v2',
-    guestCheckins: 'flowmate_guest_checkins_v2',
-    guestJournals: 'flowmate_guest_journals_v2',
     theme: 'flowmate_theme_v2',
     token: 'flowmate_token',
     user: 'flowmate_user',
 };
+const GOOGLE_CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
 
 let authToken = localStorage.getItem(STORAGE_KEYS.token);
 let authUser = localStorage.getItem(STORAGE_KEYS.user);
-let guestMode = localStorage.getItem(STORAGE_KEYS.guestMode) === 'true';
+let currentProfile = null;
 let currentPage = 'home';
 let currentEvents = [];
 let latestRescuePlan = null;
 let energyChart = null;
 let moodChart = null;
-let usingDemoFallback = false;
+let publicConfig = null;
+let googleCalendarTokenClient = null;
+let googleCalendarAccessToken = null;
+let googleCalendarTokenExpiresAt = 0;
 
-const fallbackDemoEvents = () => {
-    const date = todayString();
-    return [
-        { id: 'evt-1', title: 'Morning Run & Gym', start: '07:00', end: '08:00', is_immovable: false, priority: 'low', date },
-        { id: 'evt-2', title: 'Belajar Deep Learning', start: '09:00', end: '11:00', is_immovable: false, priority: 'high', date },
-        { id: 'evt-3', title: 'Kuliah Sistem Kontrol', start: '14:00', end: '16:00', is_immovable: true, priority: 'high', date },
-        { id: 'evt-4', title: 'Tugas Robotika', start: '16:15', end: '18:15', is_immovable: false, priority: 'high', date },
-        { id: 'evt-5', title: 'Meeting Kelompok', start: '17:30', end: '18:30', is_immovable: false, priority: 'medium', date },
-        { id: 'evt-6', title: 'Olahraga Ringan / Jalan Sore', start: '19:00', end: '19:45', is_immovable: false, priority: 'low', date },
-    ];
-};
+cleanupLegacyDemoState();
 
 document.addEventListener('DOMContentLoaded', async () => {
     applyTheme(localStorage.getItem(STORAGE_KEYS.theme) || 'dark');
     setupNavigation();
     setupTopbar();
     setupAuth();
+    setupProfileDrawer();
     setupRescue();
     setupCheckin();
     setupJournal();
     setupAddEvent();
-    setupVoiceInput();
-    setupPWAInstall();
+    setupUndo();
+    setupPanicFab();
     updateDateDisplay();
+    scheduleCheckinGreeting();
     syncAuthUI();
-    await loadSchedule();
-    await loadJournalHistory();
-    await loadDashboard();
+    await refreshAll();
 });
 
-function todayString() {
-    return new Date().toISOString().split('T')[0];
-}
-
-function readStorage(key, fallback) {
-    try {
-        const raw = localStorage.getItem(key);
-        return raw ? JSON.parse(raw) : fallback;
-    } catch {
-        return fallback;
-    }
-}
-
-function writeStorage(key, value) {
-    localStorage.setItem(key, JSON.stringify(value));
+function cleanupLegacyDemoState() {
+    [
+        'flowmate_guest_mode',
+        'flowmate_demo_events_v2',
+        'flowmate_guest_rescues_v2',
+        'flowmate_guest_checkins_v2',
+        'flowmate_guest_journals_v2',
+    ].forEach((key) => localStorage.removeItem(key));
 }
 
 function isAuthed() {
     return Boolean(authToken);
 }
 
+function todayString() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function currentTimeString() {
+    const now = new Date();
+    return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+}
+
+function getMinutes(value) {
+    const [hour, minute] = value.split(':').map(Number);
+    return hour * 60 + minute;
+}
+
+function getDisplayName() {
+    return currentProfile?.display_name || authUser || 'FlowMate User';
+}
+
+function getInitial() {
+    return getDisplayName().trim().charAt(0).toUpperCase() || 'F';
+}
+
+function normalizeJournalAnalysis(analysis = {}) {
+    const blockersRaw = analysis.blockers;
+    const blockers = Array.isArray(blockersRaw)
+        ? blockersRaw
+        : blockersRaw
+            ? [String(blockersRaw)]
+            : [];
+    const productivityRaw = analysis.productivity;
+    const productivityNumber = Number(productivityRaw);
+    return {
+        mood: analysis.mood || '-',
+        productivity: Number.isFinite(productivityNumber) ? productivityNumber : '-',
+        blockers,
+        insight: analysis.insight || '-',
+    };
+}
+
 async function apiFetch(endpoint, options = {}) {
     const headers = options.headers ? { ...options.headers } : {};
-    if (authToken) {
-        headers.Authorization = `Bearer ${authToken}`;
-    }
+    if (authToken) headers.Authorization = `Bearer ${authToken}`;
     const response = await fetch(`${API}${endpoint}`, { ...options, headers });
-    if (response.status === 401 && authToken) {
-        clearAuth();
-        syncAuthUI();
+    if (response.status === 401) {
+        logout(false);
         openAuthOverlay();
         throw new Error('Sesi login tidak valid. Silakan masuk lagi.');
     }
     return response;
 }
 
-function clearAuth() {
+async function fetchPublicConfig() {
+    if (publicConfig) return publicConfig;
+    const response = await fetch(`${API}/api/public-config`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'Gagal memuat konfigurasi publik');
+    publicConfig = data;
+    return publicConfig;
+}
+
+function clearAuthState() {
     authToken = null;
     authUser = null;
+    currentProfile = null;
     localStorage.removeItem(STORAGE_KEYS.token);
     localStorage.removeItem(STORAGE_KEYS.user);
 }
 
+function logout(showToastMessage = true) {
+    clearAuthState();
+    closeProfileDrawer();
+    syncAuthUI();
+    refreshAll();
+    if (showToastMessage) showToast('Kamu sudah logout.', 'success');
+}
+
+function updateThemeToggle(theme) {
+    const button = document.getElementById('theme-toggle');
+    const icon = document.getElementById('theme-toggle-icon');
+    if (!button || !icon) return;
+
+    const isLight = theme === 'light';
+    icon.textContent = isLight ? '☀️' : '🌙';
+    const nextThemeLabel = isLight ? 'mode gelap' : 'mode terang';
+    button.setAttribute('aria-label', `Ganti ke ${nextThemeLabel}`);
+    button.setAttribute('title', `Ganti ke ${nextThemeLabel}`);
+}
+
+function applyTheme(theme) {
+    document.body.dataset.theme = theme;
+    localStorage.setItem(STORAGE_KEYS.theme, theme);
+    updateThemeToggle(theme);
+}
+
+function applyFocusMode(enabled) {
+    document.body.classList.toggle('focus-mode', Boolean(enabled));
+}
+
+function updateDateDisplay() {
+    const formatted = new Intl.DateTimeFormat('id-ID', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+    }).format(new Date());
+    document.getElementById('date-display').textContent = formatted;
+}
+
+function updateGoogleCalendarSyncStatus(message) {
+    const status = document.getElementById('gcal-sync-status');
+    if (!status) return;
+    status.textContent = message;
+}
+
+async function ensureGoogleCalendarTokenClient() {
+    const config = await fetchPublicConfig();
+    const clientId = config.google_client_id;
+    if (!clientId) {
+        throw new Error('Google Calendar belum dikonfigurasi di server.');
+    }
+    if (!window.google?.accounts?.oauth2) {
+        throw new Error('Google Identity belum siap. Coba lagi beberapa detik.');
+    }
+    if (!googleCalendarTokenClient) {
+        googleCalendarTokenClient = window.google.accounts.oauth2.initTokenClient({
+            client_id: clientId,
+            scope: GOOGLE_CALENDAR_SCOPE,
+            callback: () => {},
+        });
+    }
+    return googleCalendarTokenClient;
+}
+
+async function requestGoogleCalendarAccessToken(promptValue) {
+    const tokenClient = await ensureGoogleCalendarTokenClient();
+    return new Promise((resolve, reject) => {
+        tokenClient.callback = (response) => {
+            if (!response || response.error) {
+                reject(new Error('Izin Google Calendar dibatalkan atau gagal.'));
+                return;
+            }
+            googleCalendarAccessToken = response.access_token;
+            googleCalendarTokenExpiresAt = Date.now() + ((response.expires_in || 0) * 1000);
+            resolve(response.access_token);
+        };
+        try {
+            tokenClient.requestAccessToken({ prompt: promptValue });
+        } catch (err) {
+            reject(err);
+        }
+    });
+}
+
+async function getGoogleCalendarAccessToken() {
+    const hasValidToken = googleCalendarAccessToken && Date.now() < googleCalendarTokenExpiresAt - 5000;
+    if (hasValidToken) return googleCalendarAccessToken;
+    return requestGoogleCalendarAccessToken(googleCalendarAccessToken ? '' : 'consent');
+}
+
 function setupNavigation() {
+    const sidebar = document.getElementById('sidebar');
+    const mobileBtn = document.getElementById('mobile-menu-btn');
+
     document.querySelectorAll('.nav-btn').forEach((button) => {
         button.addEventListener('click', async () => {
             document.querySelectorAll('.nav-btn').forEach((item) => item.classList.remove('active'));
             button.classList.add('active');
-            navigateTo(button.dataset.page);
+            await navigateTo(button.dataset.page);
         });
     });
 
-    const mobileBtn = document.getElementById('mobile-menu-btn');
-    const sidebar = document.getElementById('sidebar');
     mobileBtn.addEventListener('click', () => sidebar.classList.toggle('open'));
     document.addEventListener('click', (event) => {
         if (window.innerWidth > 960) return;
@@ -117,55 +243,27 @@ async function navigateTo(page) {
     currentPage = page;
     document.querySelectorAll('.page').forEach((section) => section.classList.remove('active'));
     document.getElementById(`page-${page}`).classList.add('active');
-    if (window.innerWidth <= 960) {
-        document.getElementById('sidebar').classList.remove('open');
-    }
-    if (page === 'dashboard') {
-        await loadDashboard();
-    }
-    if (page === 'journal') {
-        await loadJournalHistory();
-    }
+    if (window.innerWidth <= 960) document.getElementById('sidebar').classList.remove('open');
+    if (page === 'journal') await loadJournalHistory();
+    if (page === 'dashboard') await loadDashboard();
 }
 
 function setupTopbar() {
     document.getElementById('theme-toggle').addEventListener('click', () => {
-        const nextTheme = document.body.dataset.theme === 'light' ? 'dark' : 'light';
-        applyTheme(nextTheme);
+        applyTheme(document.body.dataset.theme === 'light' ? 'dark' : 'light');
     });
 
     document.getElementById('auth-action-btn').addEventListener('click', () => {
-        if (isAuthed()) {
-            clearAuth();
-            guestMode = false;
-            localStorage.removeItem(STORAGE_KEYS.guestMode);
-            syncAuthUI();
-            openAuthOverlay();
-            showToast('Kamu sudah logout.', 'success');
-            loadSchedule();
-            loadDashboard();
-            loadJournalHistory();
-            return;
-        }
         openAuthOverlay();
     });
-}
 
-function applyTheme(theme) {
-    document.body.dataset.theme = theme;
-    localStorage.setItem(STORAGE_KEYS.theme, theme);
-}
-
-function updateDateDisplay() {
-    const formatted = new Intl.DateTimeFormat('id-ID', {
-        weekday: 'long',
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-    }).format(new Date());
-    document.getElementById('date-display').textContent = formatted;
+    document.getElementById('profile-avatar-btn').addEventListener('click', () => {
+        if (!isAuthed()) {
+            openAuthOverlay();
+            return;
+        }
+        openProfileDrawer();
+    });
 }
 
 function setupAuth() {
@@ -188,21 +286,13 @@ function setupAuth() {
         loginForm.classList.add('hidden');
     });
 
-    document.getElementById('btn-demo-mode').addEventListener('click', async () => {
-        guestMode = true;
-        localStorage.setItem(STORAGE_KEYS.guestMode, 'true');
-        closeAuthOverlay();
-        syncAuthUI();
-        await loadSchedule();
-        await loadDashboard();
-    });
-
     loginForm.addEventListener('submit', async (event) => {
         event.preventDefault();
-        const btn = document.getElementById('login-btn');
+        const button = document.getElementById('login-btn');
         const error = document.getElementById('login-error');
         error.classList.add('hidden');
-        setLoading(btn, true);
+        setLoading(button, true);
+
         try {
             const formData = new URLSearchParams();
             formData.append('username', document.getElementById('login-username').value.trim());
@@ -218,28 +308,25 @@ function setupAuth() {
             authUser = data.username;
             localStorage.setItem(STORAGE_KEYS.token, authToken);
             localStorage.setItem(STORAGE_KEYS.user, authUser);
-            guestMode = false;
-            localStorage.removeItem(STORAGE_KEYS.guestMode);
-            syncAuthUI();
             closeAuthOverlay();
-            await loadSchedule();
-            await loadJournalHistory();
-            await loadDashboard();
+            await refreshAll();
+            syncAuthUI();
             showToast('Berhasil masuk.', 'success');
-        } catch (errorObj) {
-            error.textContent = errorObj.message;
+        } catch (err) {
+            error.textContent = err.message;
             error.classList.remove('hidden');
         } finally {
-            setLoading(btn, false);
+            setLoading(button, false);
         }
     });
 
     registerForm.addEventListener('submit', async (event) => {
         event.preventDefault();
-        const btn = document.getElementById('reg-btn');
+        const button = document.getElementById('reg-btn');
         const error = document.getElementById('reg-error');
         error.classList.add('hidden');
-        setLoading(btn, true);
+        setLoading(button, true);
+
         try {
             const payload = {
                 username: document.getElementById('reg-username').value.trim(),
@@ -257,52 +344,31 @@ function setupAuth() {
             authUser = data.username;
             localStorage.setItem(STORAGE_KEYS.token, authToken);
             localStorage.setItem(STORAGE_KEYS.user, authUser);
-            guestMode = false;
-            localStorage.removeItem(STORAGE_KEYS.guestMode);
-            syncAuthUI();
             closeAuthOverlay();
-            await loadSchedule();
-            await loadJournalHistory();
-            await loadDashboard();
+            await refreshAll();
+            syncAuthUI();
             showToast('Akun berhasil dibuat.', 'success');
-        } catch (errorObj) {
-            error.textContent = errorObj.message;
+        } catch (err) {
+            error.textContent = err.message;
             error.classList.remove('hidden');
         } finally {
-            setLoading(btn, false);
+            setLoading(button, false);
         }
     });
 }
 
-function syncAuthUI() {
-    const overlay = document.getElementById('auth-overlay');
-    const modeBadge = document.getElementById('mode-badge');
-    const authActionBtn = document.getElementById('auth-action-btn');
-    const authState = document.getElementById('auth-state');
-    const processingMode = document.getElementById('processing-mode');
+function setupProfileDrawer() {
+    const overlay = document.getElementById('profile-drawer-overlay');
+    const closeBtn = document.getElementById('profile-drawer-close');
+    const saveBtn = document.getElementById('profile-save-btn');
+    const logoutBtn = document.getElementById('profile-logout-btn');
 
-    if (isAuthed() || guestMode) {
-        overlay.classList.add('hidden');
-    } else {
-        overlay.classList.remove('hidden');
-    }
-
-    if (isAuthed()) {
-        modeBadge.textContent = 'LOCAL SAVE MODE';
-        authActionBtn.textContent = `Logout ${authUser}`;
-        authState.textContent = authUser;
-        processingMode.textContent = 'connected';
-    } else if (guestMode) {
-        modeBadge.textContent = 'DEMO MODE';
-        authActionBtn.textContent = 'Masuk';
-        authState.textContent = 'guest/demo';
-        processingMode.textContent = 'demo';
-    } else {
-        modeBadge.textContent = 'LOCKED';
-        authActionBtn.textContent = 'Masuk';
-        authState.textContent = 'sign in or demo';
-        processingMode.textContent = 'idle';
-    }
+    overlay.addEventListener('click', (event) => {
+        if (event.target === overlay) closeProfileDrawer();
+    });
+    closeBtn.addEventListener('click', closeProfileDrawer);
+    saveBtn.addEventListener('click', saveProfile);
+    logoutBtn.addEventListener('click', () => logout(true));
 }
 
 function openAuthOverlay() {
@@ -313,57 +379,150 @@ function closeAuthOverlay() {
     document.getElementById('auth-overlay').classList.add('hidden');
 }
 
-async function loadSchedule() {
-    let loadedEvents = [];
+function openProfileDrawer() {
+    renderProfileDrawer();
+    document.getElementById('profile-drawer-overlay').classList.remove('hidden');
+}
+
+function closeProfileDrawer() {
+    document.getElementById('profile-drawer-overlay').classList.add('hidden');
+}
+
+function syncAuthUI() {
+    const overlay = document.getElementById('auth-overlay');
+    const modeBadge = document.getElementById('mode-badge');
+    const authActionBtn = document.getElementById('auth-action-btn');
+    const avatarBtn = document.getElementById('profile-avatar-btn');
+    const authState = document.getElementById('auth-state');
+    const processingMode = document.getElementById('processing-mode');
 
     if (isAuthed()) {
-        try {
-            const response = await apiFetch('/api/events');
-            const data = await response.json();
-            loadedEvents = data.today_events || [];
-            if (!loadedEvents.length) {
-                const demoResponse = await fetch(`${API}/api/demo-calendar`);
-                const demoData = await demoResponse.json();
-                loadedEvents = demoData.today_events || fallbackDemoEvents();
-                usingDemoFallback = true;
-            } else {
-                usingDemoFallback = false;
-            }
-        } catch (error) {
-            console.error(error);
-            loadedEvents = fallbackDemoEvents();
-            usingDemoFallback = true;
-        }
+        overlay.classList.add('hidden');
+        modeBadge.textContent = 'LIVE MODE';
+        authActionBtn.classList.add('hidden');
+        avatarBtn.classList.remove('hidden');
+        authState.textContent = getDisplayName();
+        processingMode.textContent = 'connected';
     } else {
-        const cached = readStorage(STORAGE_KEYS.demoEvents, []);
-        if (cached.length) {
-            loadedEvents = cached;
-        } else {
-            try {
-                const response = await fetch(`${API}/api/demo-calendar`);
-                const data = await response.json();
-                loadedEvents = data.today_events || fallbackDemoEvents();
-            } catch {
-                loadedEvents = fallbackDemoEvents();
-            }
-            writeStorage(STORAGE_KEYS.demoEvents, loadedEvents);
-        }
+        overlay.classList.remove('hidden');
+        modeBadge.textContent = 'LOGIN REQUIRED';
+        authActionBtn.classList.remove('hidden');
+        avatarBtn.classList.add('hidden');
+        authState.textContent = 'login required';
+        processingMode.textContent = 'locked';
     }
 
-    if (!isAuthed()) usingDemoFallback = false;
-    currentEvents = normalizeEvents(loadedEvents);
-    latestRescuePlan = null;
-    renderBeforeTimeline();
-    renderAfterTimeline([]);
-    renderDecisionLog([]);
-    renderActionSummary(null);
-    updateMetricsFromCurrentState();
+    updateAvatarUI();
+}
+
+function updateAvatarUI() {
+    const initial = getInitial();
+    const avatar = document.getElementById('profile-avatar-initial');
+    const drawerAvatar = document.getElementById('profile-avatar-large');
+    const heading = document.getElementById('profile-name-heading');
+    const emailText = document.getElementById('profile-email-text');
+
+    avatar.textContent = initial;
+    drawerAvatar.textContent = initial;
+    heading.textContent = getDisplayName();
+    emailText.textContent = currentProfile?.email || '';
+}
+
+function renderProfileDrawer() {
+    if (!currentProfile) return;
+    updateAvatarUI();
+    document.getElementById('profile-display-name').value = currentProfile.display_name || '';
+    document.getElementById('profile-email').value = currentProfile.email || '';
+    document.getElementById('profile-wake-time').value = currentProfile.default_wake_time || '07:00';
+    document.getElementById('profile-sleep-hours').value = currentProfile.default_sleep_hours ?? 7.5;
+    document.getElementById('profile-timezone').value = currentProfile.timezone || 'Asia/Jakarta';
+    document.getElementById('profile-focus-mode').checked = Boolean(currentProfile.focus_mode_enabled);
+}
+
+function applyProfileDefaults() {
+    if (!currentProfile) return;
+    document.getElementById('ci-wake').value = currentProfile.default_wake_time || '07:00';
+    document.getElementById('ci-sleep').value = currentProfile.default_sleep_hours ?? 7.5;
+    document.getElementById('ci-sleep-val').textContent = currentProfile.default_sleep_hours ?? 7.5;
+    applyFocusMode(currentProfile.focus_mode_enabled);
+}
+
+async function loadProfile() {
+    if (!isAuthed()) {
+        currentProfile = null;
+        applyFocusMode(false);
+        return;
+    }
+    const response = await apiFetch('/api/profile');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'Gagal memuat profil');
+    currentProfile = data.profile || data;
+    authUser = currentProfile.username || authUser;
+    localStorage.setItem(STORAGE_KEYS.user, authUser || '');
+    applyProfileDefaults();
+    renderProfileDrawer();
+    updateAvatarUI();
+}
+
+async function saveProfile() {
+    if (!isAuthed()) {
+        openAuthOverlay();
+        return;
+    }
+
+    const button = document.getElementById('profile-save-btn');
+    setLoading(button, true);
+    try {
+        const sleepHoursInput = document.getElementById('profile-sleep-hours').value;
+        const payload = {
+            display_name: document.getElementById('profile-display-name').value.trim(),
+            default_wake_time: document.getElementById('profile-wake-time').value || '07:00',
+            default_sleep_hours: sleepHoursInput ? Number(sleepHoursInput) : 7.5,
+            timezone: document.getElementById('profile-timezone').value.trim() || 'Asia/Jakarta',
+            focus_mode_enabled: document.getElementById('profile-focus-mode').checked,
+        };
+        const response = await apiFetch('/api/profile', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || 'Gagal menyimpan profil');
+        currentProfile = data.profile;
+        applyProfileDefaults();
+        renderProfileDrawer();
+        syncAuthUI();
+        showToast('Profil berhasil diperbarui!', 'success');
+    } catch (err) {
+        console.error(err);
+        showToast(err.message || 'Gagal menyimpan profil.', 'danger');
+    } finally {
+        setLoading(button, false);
+    }
+}
+
+async function refreshAll() {
+    if (isAuthed()) {
+        try {
+            await loadProfile();
+        } catch (err) {
+            console.error(err);
+            showToast(err.message || 'Gagal memuat profil.', 'danger');
+        }
+    } else {
+        currentProfile = null;
+        applyFocusMode(false);
+    }
+    await loadSchedule();
+    await loadJournalHistory();
+    await loadDashboard();
+    syncAuthUI();
 }
 
 function normalizeEvents(events) {
     return [...events]
         .map((event) => ({
-            id: event.id || `evt-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+            id: event.id,
             title: event.title || 'Untitled Event',
             start: event.start,
             end: event.end,
@@ -377,31 +536,44 @@ function normalizeEvents(events) {
         .sort((a, b) => (`${a.date}${a.start}`).localeCompare(`${b.date}${b.start}`));
 }
 
-function getMinutes(value) {
-    const [hour, minute] = value.split(':').map(Number);
-    return hour * 60 + minute;
-}
-
 function labelDate(dateValue) {
     const today = todayString();
     if (!dateValue || dateValue === today) return 'hari ini';
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowString = tomorrow.toISOString().split('T')[0];
-    if (dateValue === tomorrowString) return 'besok';
+    if (dateValue === tomorrow.toISOString().split('T')[0]) return 'besok';
     return new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'short' }).format(new Date(dateValue));
+}
+
+function getRealtimeGreeting(date = new Date()) {
+    const hour = date.getHours();
+    if (hour >= 5 && hour < 11) return 'Selamat pagi!';
+    if (hour >= 11 && hour < 15) return 'Selamat siang!';
+    if (hour >= 15 && hour < 18) return 'Selamat sore!';
+    return 'Selamat malam!';
+}
+
+function updateCheckinGreeting() {
+    const greeting = document.getElementById('dynamic-greeting');
+    if (!greeting) return;
+    greeting.textContent = getRealtimeGreeting();
+}
+
+function scheduleCheckinGreeting() {
+    updateCheckinGreeting();
+    window.setInterval(updateCheckinGreeting, 60000);
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) updateCheckinGreeting();
+    });
 }
 
 function annotateBeforeEvents(events) {
     const nowMinutes = getMinutes(currentTimeString());
-    const today = todayString();
     return events.map((event, index) => {
         const previous = index > 0 ? events[index - 1] : null;
         const next = index < events.length - 1 ? events[index + 1] : null;
-        let status = 'preserved';
-        if (event.date !== today) {
-            status = 'deferred';
-        } else if ((previous && previous.date === event.date && getMinutes(previous.end) > getMinutes(event.start)) || (next && next.date === event.date && getMinutes(event.end) > getMinutes(next.start))) {
+        let status = event.is_immovable ? 'fixed' : 'preserved';
+        if ((previous && previous.date === event.date && getMinutes(previous.end) > getMinutes(event.start)) || (next && next.date === event.date && getMinutes(event.end) > getMinutes(next.start))) {
             status = 'conflict';
         } else if (getMinutes(event.end) <= nowMinutes) {
             status = 'missed';
@@ -409,31 +581,38 @@ function annotateBeforeEvents(events) {
             status = 'optional';
         } else if (getMinutes(event.start) <= nowMinutes + 60) {
             status = 'risky';
-        } else if (event.is_immovable) {
-            status = 'fixed';
         }
         return { ...event, status };
     });
 }
 
-function currentTimeString() {
-    const now = new Date();
-    return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-}
+async function loadSchedule() {
+    latestRescuePlan = null;
+    if (!isAuthed()) {
+        currentEvents = [];
+        renderBeforeTimeline();
+        renderAfterTimeline([]);
+        renderDecisionLog([]);
+        renderActionSummary(null);
+        updateMetricsFromCurrentState();
+        return;
+    }
 
-function renderBeforeTimeline() {
-    const annotated = annotateBeforeEvents(currentEvents.filter((event) => event.date === todayString() || event.date === nextLocalDateString()));
-    renderTimeline('timeline-before', annotated, { removable: true, emptyText: '<span class="empty-icon">📋</span>Jadwalmu kosong hari ini. Tambah event atau langsung jalankan <strong>Debug My Day</strong> untuk recovery plan.' });
-}
+    try {
+        const response = await apiFetch('/api/events');
+        const data = await response.json();
+        currentEvents = normalizeEvents(data.today_events || []);
+    } catch (err) {
+        console.error(err);
+        currentEvents = [];
+        showToast('Gagal memuat event.', 'danger');
+    }
 
-function nextLocalDateString() {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    return tomorrow.toISOString().split('T')[0];
-}
-
-function renderAfterTimeline(events) {
-    renderTimeline('timeline-after', normalizeEvents(events), { removable: false, emptyText: '<span class="empty-icon">✨</span>Recovery plan akan muncul di sini setelah kamu jalankan <strong>Debug My Day</strong>.' });
+    renderBeforeTimeline();
+    renderAfterTimeline([]);
+    renderDecisionLog([]);
+    renderActionSummary(null);
+    updateMetricsFromCurrentState();
 }
 
 function renderTimeline(containerId, events, options = {}) {
@@ -448,7 +627,7 @@ function renderTimeline(containerId, events, options = {}) {
         const status = event.status || (event.is_immovable ? 'fixed' : 'preserved');
         const badgeText = (event.label || status).replace('_', ' ');
         const subtitle = event.reason || `${event.priority.toUpperCase()} • ${labelDate(event.date)}`;
-        const removeButton = options.removable
+        const actionHtml = options.removable
             ? `<button class="remove-btn" data-remove-id="${event.id}" aria-label="Hapus event">×</button>`
             : `<span class="timeline-badge ${status}">${badgeText}</span>`;
         return `
@@ -458,7 +637,7 @@ function renderTimeline(containerId, events, options = {}) {
                     <div class="timeline-title">${event.title}</div>
                     <div class="timeline-subtitle">${subtitle}</div>
                 </div>
-                ${removeButton}
+                ${actionHtml}
             </div>
         `;
     }).join('');
@@ -470,27 +649,42 @@ function renderTimeline(containerId, events, options = {}) {
     }
 }
 
+function renderBeforeTimeline() {
+    const items = annotateBeforeEvents(currentEvents);
+    renderTimeline('timeline-before', items, {
+        removable: true,
+        emptyText: '<span class="empty-icon">📋</span>Belum ada event hari ini. Tambah event nyata atau sinkronkan kalendermu dulu.',
+    });
+}
+
+function renderAfterTimeline(events) {
+    renderTimeline('timeline-after', normalizeEvents(events), {
+        removable: false,
+        emptyText: '<span class="empty-icon">✨</span>Recovery plan akan muncul di sini setelah kamu menjalankan <strong>Debug My Day</strong>.',
+    });
+}
+
 function updateMetricsFromCurrentState() {
-    const annotated = annotateBeforeEvents(currentEvents.filter((event) => event.date === todayString()));
+    const annotated = annotateBeforeEvents(currentEvents);
     const conflicts = annotated.filter((event) => event.status === 'conflict').length;
     const missed = annotated.filter((event) => event.status === 'missed').length;
     const lowEnergy = parseInt(document.getElementById('rescue-energy').value, 10) <= 4 ? 12 : 0;
-    const damage = Math.min(100, 22 + conflicts * 16 + missed * 12 + lowEnergy);
+    const damage = annotated.length ? Math.min(100, 12 + conflicts * 16 + missed * 12 + lowEnergy) : 0;
     document.getElementById('metric-damage').textContent = `${damage}%`;
-    document.getElementById('metric-before').textContent = `${Math.max(100 - damage, 8)}%`;
+    document.getElementById('metric-before').textContent = annotated.length ? `${Math.max(100 - damage, 8)}%` : '--';
     document.getElementById('metric-after').textContent = '--';
     document.getElementById('metric-recovered').textContent = annotated.filter((event) => event.is_immovable).length;
 }
 
 function setupRescue() {
-    const rescueEnergy = document.getElementById('rescue-energy');
-    const rescueEnergyValue = document.getElementById('rescue-energy-value');
-    rescueEnergy.addEventListener('input', () => {
-        rescueEnergyValue.textContent = rescueEnergy.value;
+    const energyInput = document.getElementById('rescue-energy');
+    energyInput.addEventListener('input', () => {
+        document.getElementById('rescue-energy-value').textContent = energyInput.value;
         if (!latestRescuePlan) updateMetricsFromCurrentState();
     });
 
     document.getElementById('rescue-submit').addEventListener('click', handleRescueSubmit);
+    document.getElementById('sync-gcal-btn').addEventListener('click', handleGoogleCalendarSync);
     document.getElementById('approve-btn').addEventListener('click', handleApplyPatch);
     document.getElementById('reject-btn').addEventListener('click', () => {
         latestRescuePlan = null;
@@ -499,65 +693,66 @@ function setupRescue() {
         renderActionSummary(null);
         updateMetricsFromCurrentState();
     });
-    document.getElementById('reset-demo-btn').addEventListener('click', async () => {
-        if (isAuthed()) {
-            showToast('Reset demo data hanya tersedia untuk guest mode.', 'warning');
-            return;
-        }
-        const events = fallbackDemoEvents();
-        writeStorage(STORAGE_KEYS.demoEvents, events);
-        currentEvents = normalizeEvents(events);
-        latestRescuePlan = null;
-        renderBeforeTimeline();
-        renderAfterTimeline([]);
-        renderDecisionLog([]);
-        renderActionSummary(null);
-        updateMetricsFromCurrentState();
-        showToast('Demo data direset.', 'success');
-    });
-
-    setupPanicFAB();
 }
 
-// Setup Panic FAB
-function setupPanicFAB() {
-    const fab = document.getElementById('panic-fab');
-    if (!fab) return;
-    fab.addEventListener('click', () => {
-        // Haptic feedback on mobile
-        if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
-        
-        // Navigate to home (rescue console)
-        document.querySelectorAll('.nav-btn').forEach((b) => b.classList.remove('active'));
-        const homeBtn = document.querySelector('[data-page="home"]');
-        if (homeBtn) homeBtn.classList.add('active');
-        navigateTo('home');
-        
-        // Focus the rescue input
-        const rescueInput = document.getElementById('rescue-message');
-        if (rescueInput) {
-            rescueInput.focus();
-            rescueInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+async function handleGoogleCalendarSync() {
+    if (!isAuthed()) {
+        openAuthOverlay();
+        showToast('Masuk dulu untuk sinkronisasi Google Calendar.', 'warning');
+        return;
+    }
+
+    const button = document.getElementById('sync-gcal-btn');
+    setLoading(button, true);
+    updateGoogleCalendarSyncStatus('Meminta izin Google Calendar dan menarik event hari ini...');
+
+    try {
+        const accessToken = await getGoogleCalendarAccessToken();
+        const response = await apiFetch('/api/sync-gcal', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ access_token: accessToken }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || 'Gagal sinkron Google Calendar.');
+
+        await loadSchedule();
+
+        const syncedCount = data.synced_count || 0;
+        const skippedAllDayCount = data.skipped_all_day_count || 0;
+        let statusMessage = syncedCount
+            ? `${syncedCount} event Google Calendar untuk ${data.target_date} berhasil dimasukkan.`
+            : `Tidak ada event Google Calendar baru untuk ${data.target_date}.`;
+        if (skippedAllDayCount) {
+            statusMessage += ` ${skippedAllDayCount} event all-day belum diimpor karena tidak punya jam spesifik.`;
         }
-        showToast('🚨 Rescue Console dibuka. Ceritakan situasimu.', 'success');
-    });
+
+        updateGoogleCalendarSyncStatus(statusMessage);
+        showToast(statusMessage, syncedCount ? 'success' : 'warning');
+    } catch (err) {
+        console.error(err);
+        updateGoogleCalendarSyncStatus('Sinkronisasi Google Calendar gagal. Coba lagi.');
+        showToast(err.message || 'Gagal sinkron Google Calendar.', 'danger');
+    } finally {
+        setLoading(button, false);
+    }
 }
 
 async function handleRescueSubmit() {
+    if (!isAuthed()) {
+        openAuthOverlay();
+        showToast('Masuk dulu untuk menjalankan rescue plan.', 'warning');
+        return;
+    }
+
     const message = document.getElementById('rescue-message').value.trim();
     if (!message) {
         showToast('Ceritakan situasimu dulu.', 'warning');
         return;
     }
 
-    const energy = parseInt(document.getElementById('rescue-energy').value, 10);
-    const mood = document.getElementById('rescue-mood').value;
     const button = document.getElementById('rescue-submit');
     setLoading(button, true);
-
-    // Haptic feedback on rescue submit
-    if (navigator.vibrate) navigator.vibrate([80, 40, 80]);
-
     renderTrace([
         'Detecting conflicts...',
         'Analyzing energy budget...',
@@ -571,29 +766,34 @@ async function handleRescueSubmit() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 situation: message,
-                energy_level: energy,
-                mood,
+                energy_level: parseInt(document.getElementById('rescue-energy').value, 10),
+                mood: document.getElementById('rescue-mood').value,
                 current_time: currentTimeString(),
-                mode: isAuthed() ? 'live' : 'demo',
+                mode: 'live',
                 today_events: currentEvents,
             }),
         });
         const result = await response.json();
-        if (!response.ok) throw new Error(result.detail || 'Gagal membuat rescue plan');
+        if (!response.ok) throw new Error(result.detail || 'Gagal membuat recovery plan');
         latestRescuePlan = result;
-        renderRescueResult(result);
-        if (!isAuthed()) recordGuestRescue(result, energy, mood);
+        renderAfterTimeline(result.new_schedule || []);
+        renderDecisionLog(result.decision_log || []);
+        renderActionSummary(result);
+        document.getElementById('metric-damage').textContent = `${result.damage_assessment?.score ?? '--'}%`;
+        document.getElementById('metric-before').textContent = `${result.recovery_score_before ?? '--'}%`;
+        document.getElementById('metric-after').textContent = `${result.recovery_score_after ?? '--'}%`;
+        document.getElementById('metric-recovered').textContent = result.stats?.fixed_events_preserved ?? 0;
         renderTrace([
             'Detecting conflicts... done',
             'Analyzing energy budget... done',
             'Protecting fixed events... done',
             'Schedule patched successfully.',
-        ], result.mode || 'demo');
-        showToast('Recovery plan siap ditinjau.', 'success');
-    } catch (error) {
-        console.error(error);
-        renderTrace(['Rescue failed. Using fallback is recommended.'], 'error');
-        showToast(error.message || 'Gagal membuat rescue plan.', 'danger');
+        ], 'live');
+        showToast('Recovery plan siap direview.', 'success');
+    } catch (err) {
+        console.error(err);
+        renderTrace(['Rescue failed. Periksa koneksi dan data event-mu.'], 'error');
+        showToast(err.message || 'Gagal membuat recovery plan.', 'danger');
     } finally {
         setLoading(button, false);
     }
@@ -602,16 +802,6 @@ async function handleRescueSubmit() {
 function renderTrace(lines, status) {
     document.getElementById('processing-mode').textContent = status;
     document.getElementById('debug-trace').innerHTML = lines.map((line) => `<li>${line}</li>`).join('');
-}
-
-function renderRescueResult(plan) {
-    renderAfterTimeline(plan.new_schedule || []);
-    renderDecisionLog(plan.decision_log || []);
-    renderActionSummary(plan);
-    document.getElementById('metric-damage').textContent = `${plan.damage_assessment?.score ?? '--'}%`;
-    document.getElementById('metric-before').textContent = `${plan.recovery_score_before ?? '--'}%`;
-    document.getElementById('metric-after').textContent = `${plan.recovery_score_after ?? '--'}%`;
-    document.getElementById('metric-recovered').textContent = plan.stats?.fixed_events_preserved ?? 0;
 }
 
 function renderDecisionLog(items) {
@@ -629,107 +819,98 @@ function renderActionSummary(plan) {
         section.classList.add('hidden');
         return;
     }
-
     section.classList.remove('hidden');
     document.getElementById('summary-title').textContent = 'Schedule patched successfully';
-    document.getElementById('session-mode').textContent = plan.mode || 'demo';
+    document.getElementById('session-mode').textContent = 'live';
     document.getElementById('summary-text').textContent = plan.summary || '-';
     document.getElementById('energy-text').textContent = plan.energy_assessment?.message || '-';
-
-    const actions = plan.schedule_actions || [];
-    document.getElementById('schedule-actions-list').innerHTML = actions.length
-        ? actions.map((item) => `<li><strong>${item.event_title}</strong> · ${item.action}${item.to ? ` → ${item.to}` : ''}<br>${item.reason}</li>`).join('')
+    document.getElementById('schedule-actions-list').innerHTML = (plan.schedule_actions || []).length
+        ? plan.schedule_actions.map((item) => `<li><strong>${item.event_title}</strong> · ${item.action}${item.to ? ` → ${item.to}` : ''}<br>${item.reason}</li>`).join('')
         : '<li>Tidak ada action tambahan.</li>';
-
-    const risks = plan.risk_flags || [];
-    document.getElementById('risk-flags').innerHTML = risks.length
-        ? risks.map((item) => `<li>${item}</li>`).join('')
+    document.getElementById('risk-flags').innerHTML = (plan.risk_flags || []).length
+        ? plan.risk_flags.map((item) => `<li>${item}</li>`).join('')
         : '<li>Tidak ada red flag utama. Draft siap direview.</li>';
 }
 
 async function handleApplyPatch() {
+    if (!isAuthed()) {
+        openAuthOverlay();
+        showToast('Masuk dulu untuk menerapkan patch.', 'warning');
+        return;
+    }
     if (!latestRescuePlan) {
         showToast('Belum ada patch untuk diterapkan.', 'warning');
         return;
     }
 
-    const validationResponse = await apiFetch('/api/validate-schedule', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            original_events: currentEvents,
-            new_schedule: latestRescuePlan.new_schedule || [],
-            energy_level: parseInt(document.getElementById('rescue-energy').value, 10),
-        }),
-    });
-    const validation = await validationResponse.json();
-    if (!validation.valid) {
-        showToast('Patch gagal validasi. Cek risk flags dulu.', 'danger');
-        return;
-    }
+    try {
+        const validationResponse = await apiFetch('/api/validate-schedule', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                original_events: currentEvents,
+                new_schedule: latestRescuePlan.new_schedule || [],
+                energy_level: parseInt(document.getElementById('rescue-energy').value, 10),
+            }),
+        });
+        const validation = await validationResponse.json();
+        if (!validation.valid) {
+            showToast('Patch gagal validasi. Periksa risk flags dulu.', 'danger');
+            return;
+        }
 
-    if (isAuthed()) {
         const response = await apiFetch('/api/apply-schedule', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ session_id: latestRescuePlan.session_id, new_schedule: latestRescuePlan.new_schedule || [] }),
         });
         const data = await response.json();
-        if (!response.ok) {
-            showToast(data.detail || 'Gagal apply patch.', 'danger');
-            return;
-        }
-        await loadSchedule();
-    } else {
-        currentEvents = normalizeEvents((latestRescuePlan.new_schedule || []).filter((event) => event.status !== 'canceled'));
-        writeStorage(STORAGE_KEYS.demoEvents, currentEvents);
-        renderBeforeTimeline();
-    }
+        if (!response.ok) throw new Error(data.detail || 'Gagal apply patch.');
 
-    latestRescuePlan = null;
-    renderAfterTimeline([]);
-    renderDecisionLog([]);
-    renderActionSummary(null);
-    updateMetricsFromCurrentState();
-    await loadDashboard();
-    // Show undo button for logged-in users
-    const undoBtn = document.getElementById('undo-btn');
-    if (isAuthed()) undoBtn.classList.remove('hidden');
-    showToast('Patch berhasil diterapkan.', 'success');
+        latestRescuePlan = null;
+        document.getElementById('undo-btn').classList.remove('hidden');
+        await loadSchedule();
+        await loadDashboard();
+        showToast('Patch berhasil diterapkan.', 'success');
+    } catch (err) {
+        console.error(err);
+        showToast(err.message || 'Gagal menerapkan patch.', 'danger');
+    }
 }
 
 async function removeEvent(eventId) {
-    if (isAuthed() && !usingDemoFallback) {
-        try {
-            const response = await apiFetch(`/api/events/${eventId}`, { method: 'DELETE' });
-            if (!response.ok) throw new Error('Gagal menghapus event');
-            await loadSchedule();
-            showToast('Event dihapus.', 'success');
-        } catch (error) {
-            showToast(error.message, 'danger');
-        }
+    if (!isAuthed()) {
+        openAuthOverlay();
+        showToast('Masuk dulu untuk menghapus event.', 'warning');
         return;
     }
-
-    currentEvents = currentEvents.filter((event) => event.id !== eventId);
-    writeStorage(STORAGE_KEYS.demoEvents, currentEvents);
-    renderBeforeTimeline();
-    updateMetricsFromCurrentState();
-    showToast('Event demo dihapus.', 'success');
+    try {
+        const response = await apiFetch(`/api/events/${eventId}`, { method: 'DELETE' });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || 'Gagal menghapus event');
+        await loadSchedule();
+        showToast('Event dihapus.', 'success');
+    } catch (err) {
+        console.error(err);
+        showToast(err.message || 'Gagal menghapus event.', 'danger');
+    }
 }
 
 function setupCheckin() {
     const sleep = document.getElementById('ci-sleep');
-    const sleepVal = document.getElementById('ci-sleep-val');
     const energy = document.getElementById('ci-energy');
-    const energyVal = document.getElementById('ci-energy-val');
-
-    sleep.addEventListener('input', () => { sleepVal.textContent = sleep.value; });
-    energy.addEventListener('input', () => { energyVal.textContent = energy.value; });
+    sleep.addEventListener('input', () => { document.getElementById('ci-sleep-val').textContent = sleep.value; });
+    energy.addEventListener('input', () => { document.getElementById('ci-energy-val').textContent = energy.value; });
     document.getElementById('checkin-submit').addEventListener('click', handleCheckin);
 }
 
 async function handleCheckin() {
+    if (!isAuthed()) {
+        openAuthOverlay();
+        showToast('Masuk dulu untuk menjalankan morning check-in.', 'warning');
+        return;
+    }
+
     const button = document.getElementById('checkin-submit');
     setLoading(button, true);
     try {
@@ -749,12 +930,11 @@ async function handleCheckin() {
         const result = await response.json();
         if (!response.ok) throw new Error(result.detail || 'Check-in gagal');
         renderCheckinResult(result);
-        if (!isAuthed()) recordGuestCheckin(payload);
         await loadDashboard();
         showToast('Morning check-in selesai.', 'success');
-    } catch (error) {
-        console.error(error);
-        showToast(error.message || 'Gagal check-in.', 'danger');
+    } catch (err) {
+        console.error(err);
+        showToast(err.message || 'Gagal check-in.', 'danger');
     } finally {
         setLoading(button, false);
     }
@@ -762,9 +942,7 @@ async function handleCheckin() {
 
 function renderCheckinResult(result) {
     const container = document.getElementById('checkin-result');
-    const timelineItems = (result.new_schedule || []).slice(0, 4).map((event) => `
-        <li><strong>${event.title}</strong> · ${event.start}-${event.end}</li>
-    `).join('');
+    const timelineItems = (result.new_schedule || []).slice(0, 4).map((event) => `<li><strong>${event.title}</strong> · ${event.start}-${event.end}</li>`).join('');
     container.innerHTML = `
         <div class="panel-header">
             <div>
@@ -773,32 +951,29 @@ function renderCheckinResult(result) {
             </div>
             <span class="panel-tag">${result.damage_assessment?.level || 'stable'}</span>
         </div>
-        <div class="system-box">
-            <p>${result.summary || '-'}</p>
-        </div>
-        <div class="system-box">
-            <h4>Focus Window</h4>
-            <p>${result.energy_assessment?.message || '-'}</p>
-        </div>
-        <div class="system-box">
-            <h4>Suggested Sequence</h4>
-            <ul class="decision-list">${timelineItems || '<li>Tidak ada rekomendasi khusus.</li>'}</ul>
-        </div>
+        <div class="system-box"><p>${result.summary || '-'}</p></div>
+        <div class="system-box"><h4>Focus Window</h4><p>${result.energy_assessment?.message || '-'}</p></div>
+        <div class="system-box"><h4>Suggested Sequence</h4><ul class="decision-list">${timelineItems || '<li>Tidak ada rekomendasi khusus.</li>'}</ul></div>
     `;
 }
 
 function setupJournal() {
     document.getElementById('journal-submit').addEventListener('click', handleJournalSubmit);
-    const weeklyBtn = document.getElementById('load-weekly-insight-btn');
-    if (weeklyBtn) weeklyBtn.addEventListener('click', loadWeeklyInsight);
 }
 
 async function handleJournalSubmit() {
+    if (!isAuthed()) {
+        openAuthOverlay();
+        showToast('Masuk dulu untuk menyimpan journal.', 'warning');
+        return;
+    }
+
     const text = document.getElementById('journal-text').value.trim();
     if (!text) {
         showToast('Tulis jurnal dulu.', 'warning');
         return;
     }
+
     const button = document.getElementById('journal-submit');
     setLoading(button, true);
     try {
@@ -809,75 +984,68 @@ async function handleJournalSubmit() {
         });
         const result = await response.json();
         if (!response.ok) throw new Error(result.detail || 'Jurnal gagal disimpan');
-        if (!isAuthed()) {
-            const guestEntries = readStorage(STORAGE_KEYS.guestJournals, []);
-            guestEntries.unshift(result.entry);
-            writeStorage(STORAGE_KEYS.guestJournals, guestEntries.slice(0, 30));
-        }
         renderJournalInsight(result.analysis || result.entry?.analysis);
         document.getElementById('journal-text').value = '';
         await loadJournalHistory();
         await loadDashboard();
         showToast('Jurnal tersimpan.', 'success');
-    } catch (error) {
-        console.error(error);
-        showToast(error.message || 'Gagal menyimpan jurnal.', 'danger');
+    } catch (err) {
+        console.error(err);
+        showToast(err.message || 'Gagal menyimpan jurnal.', 'danger');
     } finally {
         setLoading(button, false);
     }
 }
 
 function renderJournalInsight(analysis) {
+    const normalized = normalizeJournalAnalysis(analysis);
     const section = document.getElementById('journal-insight');
     const content = document.getElementById('insight-content');
     section.classList.remove('hidden');
     content.innerHTML = `
-        <div class="insight-item"><strong>Mood:</strong> ${analysis?.mood || '-'}</div>
-        <div class="insight-item"><strong>Produktivitas:</strong> ${analysis?.productivity || '-'} / 10</div>
-        <div class="insight-item"><strong>Blockers:</strong> ${(analysis?.blockers || []).join(', ') || 'Tidak ada blocker utama'}</div>
-        <div class="insight-item"><strong>Insight:</strong> ${analysis?.insight || '-'}</div>
+        <div class="insight-item"><strong>Mood:</strong> ${normalized.mood}</div>
+        <div class="insight-item"><strong>Produktivitas:</strong> ${normalized.productivity} / 10</div>
+        <div class="insight-item"><strong>Blockers:</strong> ${normalized.blockers.join(', ') || 'Tidak ada blocker utama'}</div>
+        <div class="insight-item"><strong>Insight:</strong> ${normalized.insight}</div>
     `;
 }
 
 async function loadJournalHistory() {
-    let entries = [];
-    if (isAuthed()) {
-        try {
-            const response = await apiFetch('/api/journal');
-            const data = await response.json();
-            entries = data.entries || [];
-        } catch (error) {
-            console.error(error);
-        }
-    } else {
-        entries = readStorage(STORAGE_KEYS.guestJournals, []);
-    }
-    renderJournalHistory(entries);
-}
-
-function renderJournalHistory(entries) {
     const container = document.getElementById('journal-history');
-    if (!entries.length) {
-        container.innerHTML = `
-            <div class="empty-state-block">
-                <h3>Belum ada jurnal</h3>
-                <p>Entry yang kamu simpan akan muncul di sini.</p>
-            </div>
-        `;
+    if (!isAuthed()) {
+        container.innerHTML = `<div class="empty-state-block"><h3>Login diperlukan</h3><p>Journal dan insight personal tersedia setelah kamu masuk.</p></div>`;
         return;
     }
-    container.innerHTML = entries.map((entry) => `
-        <div class="journal-card">
-            <div class="journal-card-date">${entry.date || todayString()}</div>
-            <div>${entry.text}</div>
-            <div class="journal-card-meta">Mood: ${entry.mood || entry.analysis?.mood || '-'}</div>
-        </div>
-    `).join('');
+
+    try {
+        const response = await apiFetch('/api/journal');
+        const data = await response.json();
+        const entries = data.entries || [];
+        if (!entries.length) {
+            container.innerHTML = `<div class="empty-state-block"><h3>Belum ada jurnal</h3><p>Entry yang kamu simpan akan muncul di sini.</p></div>`;
+            return;
+        }
+        container.innerHTML = entries.map((entry) => `
+            <div class="journal-card">
+                <div class="journal-card-date">${entry.date || todayString()}</div>
+                <div>${entry.text}</div>
+                <div class="journal-card-meta">Mood: ${entry.mood || '-'}</div>
+            </div>
+        `).join('');
+    } catch (err) {
+        console.error(err);
+        container.innerHTML = `<div class="empty-state-block"><h3>Gagal memuat journal</h3><p>${err.message}</p></div>`;
+    }
 }
 
 function setupAddEvent() {
     const modal = document.getElementById('add-event-modal');
     document.getElementById('btn-add-event').addEventListener('click', () => {
+        if (!isAuthed()) {
+            openAuthOverlay();
+            showToast('Masuk dulu untuk menambah event.', 'warning');
+            return;
+        }
         modal.classList.remove('hidden');
         const now = new Date();
         const start = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
@@ -897,6 +1065,12 @@ function setupAddEvent() {
 }
 
 async function handleAddEvent() {
+    if (!isAuthed()) {
+        openAuthOverlay();
+        showToast('Masuk dulu untuk menambah event.', 'warning');
+        return;
+    }
+
     const title = document.getElementById('event-title').value.trim();
     const start = document.getElementById('event-start').value;
     const end = document.getElementById('event-end').value;
@@ -905,101 +1079,67 @@ async function handleAddEvent() {
         return;
     }
 
-    const newEvent = {
-        id: `evt-${Date.now()}`,
-        title,
-        start,
-        end,
-        priority: document.getElementById('event-priority').value,
-        is_immovable: document.getElementById('event-immovable').checked,
-        date: todayString(),
-    };
     const button = document.getElementById('add-event-submit');
     setLoading(button, true);
-
     try {
-        if (isAuthed()) {
-            const response = await apiFetch('/api/events', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(newEvent),
-            });
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.detail || 'Gagal menyimpan event');
-            await loadSchedule();
-        } else {
-            currentEvents.push(newEvent);
-            currentEvents = normalizeEvents(currentEvents);
-            writeStorage(STORAGE_KEYS.demoEvents, currentEvents);
-            renderBeforeTimeline();
-            updateMetricsFromCurrentState();
-        }
+        const response = await apiFetch('/api/events', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                id: `evt-${Date.now()}`,
+                title,
+                start,
+                end,
+                priority: document.getElementById('event-priority').value,
+                is_immovable: document.getElementById('event-immovable').checked,
+                date: todayString(),
+            }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || 'Gagal menyimpan event');
         document.getElementById('add-event-modal').classList.add('hidden');
+        await loadSchedule();
         showToast('Event berhasil ditambahkan.', 'success');
-    } catch (error) {
-        console.error(error);
-        showToast(error.message || 'Gagal menambah event.', 'danger');
+    } catch (err) {
+        console.error(err);
+        showToast(err.message || 'Gagal menambah event.', 'danger');
     } finally {
         setLoading(button, false);
     }
 }
 
 async function loadDashboard() {
-    const data = isAuthed() ? await loadDashboardFromApi() : buildGuestDashboard();
-    document.getElementById('stat-rescues').textContent = data.total_rescues || 0;
-    document.getElementById('stat-checkins').textContent = data.total_checkins || 0;
-    document.getElementById('stat-energy').textContent = data.avg_energy || 0;
-    document.getElementById('stat-preservation').textContent = `${data.fixed_event_preservation_rate || 0}%`;
-    // Update AI insight callout
-    const calloutText = document.getElementById('dashboard-ai-text');
-    if (calloutText) {
-        if (data.avg_recovery_improvement && data.avg_recovery_improvement > 0) {
-            calloutText.textContent = `FlowMate sudah meningkatkan recovery rate-mu rata-rata ${data.avg_recovery_improvement}% per sesi. Energi rata-rata: ${data.avg_energy}/10.`;
-        } else if (data.total_rescues > 0) {
-            calloutText.textContent = `Kamu sudah menjalankan ${data.total_rescues} rescue session. Terus gunakan FlowMate untuk melihat tren pemulihanmu.`;
-        } else {
-            calloutText.textContent = 'Jalankan beberapa rescue session dan tulis jurnal untuk mendapatkan insight personal dari FlowMate AI.';
+    const stats = {
+        total_rescues: 0,
+        total_checkins: 0,
+        avg_energy: 0,
+        fixed_event_preservation_rate: 0,
+        checkin_history: [],
+        journal_entries: [],
+    };
+
+    if (isAuthed()) {
+        try {
+            const response = await apiFetch('/api/dashboard');
+            const data = await response.json();
+            Object.assign(stats, data);
+        } catch (err) {
+            console.error(err);
         }
     }
-    renderEnergyChart(data.checkin_history || []);
-    renderMoodChart(data.checkin_history || [], data.journal_entries || []);
-}
 
-async function loadDashboardFromApi() {
-    try {
-        const response = await apiFetch('/api/dashboard');
-        return await response.json();
-    } catch (error) {
-        console.error(error);
-        return buildGuestDashboard();
-    }
-}
-
-function buildGuestDashboard() {
-    const rescues = readStorage(STORAGE_KEYS.guestRescues, []);
-    const checkins = readStorage(STORAGE_KEYS.guestCheckins, []);
-    const journals = readStorage(STORAGE_KEYS.guestJournals, []);
-    const energyValues = [...rescues.map((item) => item.energy_level), ...checkins.map((item) => item.energy_level)].filter(Boolean);
-    const avgEnergy = energyValues.length ? (energyValues.reduce((sum, value) => sum + value, 0) / energyValues.length).toFixed(1) : 0;
-    const preservationRates = rescues.map((item) => item.fixed_event_preservation_rate || 0).filter((value) => value >= 0);
-    const history = [
-        ...rescues.map((item) => ({ type: 'rescue', mood: item.mood, energy_level: item.energy_level, timestamp: item.timestamp })),
-        ...checkins.map((item) => ({ type: 'checkin', mood: item.mood, energy_level: item.energy_level, timestamp: item.timestamp })),
-    ].sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)));
-    return {
-        total_rescues: rescues.length,
-        total_checkins: checkins.length,
-        avg_energy: avgEnergy,
-        fixed_event_preservation_rate: preservationRates.length ? Math.round(preservationRates.reduce((sum, value) => sum + value, 0) / preservationRates.length) : 0,
-        checkin_history: history,
-        journal_entries: journals,
-    };
+    document.getElementById('stat-rescues').textContent = stats.total_rescues || 0;
+    document.getElementById('stat-checkins').textContent = stats.total_checkins || 0;
+    document.getElementById('stat-energy').textContent = stats.avg_energy || 0;
+    document.getElementById('stat-preservation').textContent = `${stats.fixed_event_preservation_rate || 0}%`;
+    renderEnergyChart(stats.checkin_history || []);
+    renderMoodChart(stats.checkin_history || [], stats.journal_entries || []);
 }
 
 function renderEnergyChart(history) {
     const ctx = document.getElementById('energy-chart');
     if (energyChart) energyChart.destroy();
-    const labels = history.length ? history.map((item, index) => item.type ? `${item.type}-${index + 1}` : `#${index + 1}`) : ['no-data'];
+    const labels = history.length ? history.map((item, index) => `${item.type || 'session'}-${index + 1}`) : ['no-data'];
     const values = history.length ? history.map((item) => item.energy_level || 0) : [0];
 
     energyChart = new Chart(ctx, {
@@ -1025,7 +1165,7 @@ function renderMoodChart(history, journals) {
     if (moodChart) moodChart.destroy();
     const counts = {};
     [...history, ...journals].forEach((item) => {
-        const mood = item.mood || item.analysis?.mood || 'unknown';
+        const mood = item.mood || 'unknown';
         counts[mood] = (counts[mood] || 0) + 1;
     });
     const labels = Object.keys(counts).length ? Object.keys(counts) : ['unknown'];
@@ -1068,26 +1208,41 @@ function chartOptions(yScale = {}) {
     };
 }
 
-function recordGuestRescue(plan, energyLevel, mood) {
-    const rescues = readStorage(STORAGE_KEYS.guestRescues, []);
-    rescues.unshift({
-        timestamp: new Date().toISOString(),
-        energy_level: energyLevel,
-        mood,
-        fixed_event_preservation_rate: plan.stats?.fixed_events_preserved ? 100 : 0,
-        recovery_score_after: plan.recovery_score_after,
+function setupUndo() {
+    const undoBtn = document.getElementById('undo-btn');
+    if (!undoBtn) return;
+    undoBtn.addEventListener('click', async () => {
+        if (!isAuthed()) {
+            openAuthOverlay();
+            showToast('Masuk dulu untuk menggunakan undo.', 'warning');
+            return;
+        }
+        try {
+            const response = await apiFetch('/api/undo-schedule', { method: 'POST' });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.detail || 'Undo gagal.');
+            undoBtn.classList.add('hidden');
+            await loadSchedule();
+            showToast(`Undo berhasil — ${data.restored_count} event dikembalikan.`, 'success');
+        } catch (err) {
+            console.error(err);
+            showToast(err.message || 'Gagal undo.', 'danger');
+        }
     });
-    writeStorage(STORAGE_KEYS.guestRescues, rescues.slice(0, 30));
 }
 
-function recordGuestCheckin(payload) {
-    const entries = readStorage(STORAGE_KEYS.guestCheckins, []);
-    entries.unshift({
-        timestamp: new Date().toISOString(),
-        energy_level: payload.energy_level,
-        mood: payload.mood,
+function setupPanicFab() {
+    const fab = document.getElementById('panic-fab');
+    if (!fab) return;
+    fab.addEventListener('click', async () => {
+        document.querySelectorAll('.nav-btn').forEach((item) => item.classList.remove('active'));
+        const homeBtn = document.querySelector('[data-page="home"]');
+        if (homeBtn) homeBtn.classList.add('active');
+        await navigateTo('home');
+        const rescueInput = document.getElementById('rescue-message');
+        rescueInput.focus();
+        rescueInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
-    writeStorage(STORAGE_KEYS.guestCheckins, entries.slice(0, 30));
 }
 
 function setLoading(button, loading) {
@@ -1111,200 +1266,4 @@ function showToast(message, type = 'success') {
         toast.style.transition = 'opacity 0.22s ease, transform 0.22s ease';
         setTimeout(() => toast.remove(), 240);
     }, 2800);
-}
-
-// ── Undo Schedule ──────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
-    const undoBtn = document.getElementById('undo-btn');
-    if (undoBtn) {
-        undoBtn.addEventListener('click', async () => {
-            if (!isAuthed()) {
-                showToast('Login dulu untuk menggunakan undo.', 'warning');
-                return;
-            }
-            try {
-                const response = await apiFetch('/api/undo-schedule', { method: 'POST' });
-                const data = await response.json();
-                if (!response.ok) throw new Error(data.detail || 'Undo gagal.');
-                undoBtn.classList.add('hidden');
-                await loadSchedule();
-                showToast(`Undo berhasil — ${data.restored_count} event dikembalikan.`, 'success');
-            } catch (error) {
-                showToast(error.message || 'Gagal undo.', 'danger');
-            }
-        });
-    }
-});
-
-// ── Voice Input ────────────────────────────────────────────────
-function setupVoiceInput() {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) return; // Browser tidak mendukung
-
-    function attachMic(btnId, targetId) {
-        const btn = document.getElementById(btnId);
-        const target = document.getElementById(targetId);
-        if (!btn || !target) return;
-
-        let recognition = null;
-        let isRecording = false;
-
-        btn.addEventListener('click', () => {
-            if (isRecording) {
-                recognition.stop();
-                return;
-            }
-            recognition = new SpeechRecognition();
-            recognition.lang = 'id-ID';
-            recognition.continuous = false;
-            recognition.interimResults = true;
-
-            recognition.onstart = () => {
-                isRecording = true;
-                btn.classList.add('recording');
-                btn.title = 'Sedang merekam... klik untuk berhenti';
-                showToast('🎤 Sedang mendengarkan...', 'success');
-            };
-
-            recognition.onresult = (event) => {
-                const transcript = Array.from(event.results)
-                    .map((result) => result[0].transcript)
-                    .join('');
-                target.value = transcript;
-            };
-
-            recognition.onend = () => {
-                isRecording = false;
-                btn.classList.remove('recording');
-                btn.title = 'Klik untuk bicara';
-            };
-
-            recognition.onerror = (event) => {
-                isRecording = false;
-                btn.classList.remove('recording');
-                showToast(`Voice error: ${event.error}`, 'warning');
-            };
-
-            recognition.start();
-        });
-    }
-
-    attachMic('voice-rescue-btn', 'rescue-message');
-    attachMic('voice-journal-btn', 'journal-text');
-}
-
-// ── Weekly Insight ─────────────────────────────────────────────
-async function loadWeeklyInsight() {
-    const btn = document.getElementById('load-weekly-insight-btn');
-    const container = document.getElementById('weekly-insight-content');
-    setLoading(btn, true);
-    try {
-        const response = await apiFetch('/api/journal/weekly-insight');
-        const data = await response.json();
-        renderWeeklyInsight(data);
-    } catch (error) {
-        container.innerHTML = `<div class="empty-state-block"><h3>Gagal memuat insight</h3><p>${error.message}</p></div>`;
-    } finally {
-        setLoading(btn, false);
-    }
-}
-
-function renderWeeklyInsight(data) {
-    const container = document.getElementById('weekly-insight-content');
-    if (!data || data.entries_count === 0) {
-        container.innerHTML = `
-            <div class="empty-state-block">
-                <h3>Belum cukup data</h3>
-                <p>${data?.message || 'Tulis jurnal dulu untuk melihat pola mingguan.'}</p>
-            </div>
-        `;
-        return;
-    }
-
-    const blockerTags = (data.top_blockers || []).map((b) => `<span class="blocker-tag">${b}</span>`).join('');
-    const patternItems = (data.patterns || []).map((p) => `<li>${p}</li>`).join('');
-    const moodDist = Object.entries(data.mood_distribution || {})
-        .map(([k, v]) => `${k}: ${v}×`)
-        .join('  ·  ');
-
-    container.innerHTML = `
-        <div class="insight-grid">
-            <div class="insight-stat">
-                <span class="stat-label">Jurnal ditulis</span>
-                <strong>${data.entries_count}</strong>
-                <span style="color:var(--text-muted);font-size:0.8rem"> entri</span>
-            </div>
-            <div class="insight-stat">
-                <span class="stat-label">Mood dominan</span>
-                <strong>${data.dominant_mood || '-'}</strong>
-            </div>
-            <div class="insight-stat">
-                <span class="stat-label">Avg produktivitas</span>
-                <strong>${data.avg_productivity || '-'}</strong>
-                <span style="color:var(--text-muted);font-size:0.8rem"> / 10</span>
-            </div>
-        </div>
-        ${data.message ? `<div class="insight-message">💡 ${data.message}</div>` : ''}
-        ${patternItems ? `<ul class="insight-patterns">${patternItems}</ul>` : ''}
-        ${blockerTags ? `
-            <div style="margin-top:16px">
-                <p class="field-label">Top Blockers Minggu Ini</p>
-                <div class="blockers-row">${blockerTags}</div>
-            </div>
-        ` : ''}
-        ${moodDist ? `<p style="margin-top:14px;font-size:0.82rem;color:var(--text-muted);font-family:var(--mono)">${data.date_range} · ${moodDist}</p>` : ''}
-    `;
-}
-
-// ── PWA Install Prompt ─────────────────────────────────────────
-function setupPWAInstall() {
-    // Register service worker
-    if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-            navigator.serviceWorker.register('/static/sw.js').catch(() => {});
-        });
-    }
-
-    let deferredPrompt = null;
-
-    window.addEventListener('beforeinstallprompt', (event) => {
-        event.preventDefault();
-        deferredPrompt = event;
-        showInstallBanner();
-    });
-
-    window.addEventListener('appinstalled', () => {
-        hidePWABanner();
-        showToast('FlowMate berhasil diinstall! 🎉', 'success');
-    });
-
-    function showInstallBanner() {
-        if (document.getElementById('pwa-install-banner')) return;
-        const banner = document.createElement('div');
-        banner.id = 'pwa-install-banner';
-        banner.innerHTML = `
-            <p>📱 Install FlowMate sebagai app di perangkatmu!</p>
-            <div class="pwa-install-actions">
-                <button class="primary-btn" id="pwa-install-btn">Install</button>
-                <button class="ghost-btn" id="pwa-dismiss-btn">✕</button>
-            </div>
-        `;
-        document.body.appendChild(banner);
-
-        document.getElementById('pwa-install-btn').addEventListener('click', async () => {
-            if (!deferredPrompt) return;
-            deferredPrompt.prompt();
-            const { outcome } = await deferredPrompt.userChoice;
-            deferredPrompt = null;
-            hidePWABanner();
-            if (outcome === 'accepted') showToast('Menginstall FlowMate...', 'success');
-        });
-
-        document.getElementById('pwa-dismiss-btn').addEventListener('click', hidePWABanner);
-    }
-
-    function hidePWABanner() {
-        const banner = document.getElementById('pwa-install-banner');
-        if (banner) banner.remove();
-    }
 }
